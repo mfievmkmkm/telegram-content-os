@@ -22,3 +22,10 @@ def test_decorate_guarantees_emphasis_and_emojis():
     assert decorated.count("<b>")==1
     assert decorated.count("<i>")==1
     assert "⚡" in decorated and "🧠" in decorated and "⚽" in decorated
+
+def test_custom_emoji_is_rendered_with_safe_numeric_id():
+    result=telegram_html("⚡ Хук",{"⚡":"5368324170671202286"})
+    assert '<tg-emoji emoji-id="5368324170671202286">⚡</tg-emoji>' in result
+
+def test_custom_emoji_rejects_non_numeric_id():
+    assert "tg-emoji" not in telegram_html("⚡ Хук",{"⚡":"bad"})
