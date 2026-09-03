@@ -27,6 +27,7 @@ from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
 from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
+from .funnel import summarize_funnel
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -60,6 +61,10 @@ class ShopState(StatesGroup):
 
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
 
+def track(user_id,event_type,source="",offer_key=""):
+    try: db.save_funnel_event(user_id,event_type,source,offer_key)
+    except Exception: log.info("Funnel schema is not deployed yet")
+
 def render(channel_key,text):
     raw=db.get(f"premium_emojis:{channel_key}") or "{}"
     try: custom=json.loads(raw)
@@ -78,7 +83,8 @@ def main_keyboard():
       [InlineKeyboardButton(text="✍️ Создать пост",callback_data="panel:generate"),InlineKeyboardButton(text="⏰ Очередь",callback_data="panel:scheduled")],
       [InlineKeyboardButton(text="⚽ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="🎁 Gifts Data",callback_data="panel:gifts")],
       [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players"),InlineKeyboardButton(text="🎬 Shorts",callback_data="panel:shorts")],
-      [InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics"),InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
+      [InlineKeyboardButton(text="📊 Контент",callback_data="panel:analytics"),InlineKeyboardButton(text="🎯 Воронка",callback_data="panel:funnel")],
+      [InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
       [InlineKeyboardButton(text="🛒 Магазин услуг",callback_data="panel:shop"),InlineKeyboardButton(text="📥 Заявки",callback_data="panel:orders")],
       [InlineKeyboardButton(text="⚙️ Настройки и статус",callback_data="panel:system")]])
 
@@ -117,15 +123,16 @@ async def publish(draft_id):
     sales_markup=None
     if settings.shop_cta_every and int(draft_id)%settings.shop_cta_every==0:
         me=await bot.get_me(); slug="service_liga" if draft["channel_key"]=="liga" else "service_gifts"
-        label="Разобрать мой матч" if draft["channel_key"]=="liga" else "Вскрыть мой Gift"
         sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=f"https://t.me/{me.username}?start={slug}")]])
     sent=await bot.send_message(channel,render(draft["channel_key"],draft["text"]),parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup)
     db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=sent.message_id)
 
 @router.message(CommandStart())
-async def start(message:Message):
+async def start(message:Message,state:FSMContext):
     if not admin(message):
         payload=(message.text or "").partition(" ")[2].strip()
+        source="liga_post" if payload=="service_liga" else "gifts_post" if payload=="service_gifts" else "direct"
+        await state.update_data(shop_source=source); track(message.from_user.id,"landing",source)
         if payload=="service_liga": return await message.answer("<b>Хочешь понять, что ты реально сделал в эпизоде?</b>\n\nВыбери формат разбора",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("liga"))
         if payload=="service_gifts": return await message.answer("<b>Красивый Gift ещё не значит ликвидный</b>\n\nВыбери, что вскрываем",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("gifts"))
         return await message.answer("<b>Здесь не продают воздух</b>\n\nВыбери, где сейчас болит сильнее — футбол, Gifts или собственный Telegram-канал",parse_mode=ParseMode.HTML,reply_markup=storefront())
@@ -148,16 +155,17 @@ async def shop_category(c:CallbackQuery):
     await c.message.edit_text(f"<b>{title}</b>\n\nВыбирай не красивое название, а проблему, которую надо закрыть",parse_mode=ParseMode.HTML,reply_markup=category_keyboard(category)); await c.answer()
 
 @router.callback_query(F.data.startswith("shop:offer:"))
-async def shop_offer(c:CallbackQuery):
+async def shop_offer(c:CallbackQuery,state:FSMContext):
     key=c.data.rsplit(":",1)[-1]; offer=OFFERS.get(key)
     if not offer: return await c.answer("Услуга не найдена",show_alert=True)
+    data=await state.get_data(); track(c.from_user.id,"offer_view",data.get("shop_source","direct"),key)
     await c.message.edit_text(f"<b>{html.escape(offer.title)}</b>\n{html.escape(offer.price)}\n\n{html.escape(offer.description)}\n\nСначала уточним задачу. Оплата — только после согласования объёма",parse_mode=ParseMode.HTML,reply_markup=offer_keyboard(key)); await c.answer()
 
 @router.callback_query(F.data.startswith("shop:order:"))
 async def shop_order(c:CallbackQuery,state:FSMContext):
     key=c.data.rsplit(":",1)[-1]
     if key not in OFFERS: return await c.answer("Услуга не найдена",show_alert=True)
-    await state.set_state(ShopState.waiting_brief); await state.update_data(offer_key=key)
+    current=await state.get_data(); await state.set_state(ShopState.waiting_brief); await state.update_data(offer_key=key,shop_source=current.get("shop_source","direct"))
     await c.message.edit_text("<b>Одним сообщением:</b> что у тебя сейчас и какой результат хочешь получить?\n\nМожно приложить ссылку на канал, Gift или видео следующим сообщением",parse_mode=ParseMode.HTML); await c.answer()
 
 @router.message(ShopState.waiting_brief)
@@ -177,6 +185,7 @@ async def shop_brief(message:Message,state:FSMContext):
     if admin_chat:
         contact=f"@{username}" if username else f"ID <code>{message.from_user.id}</code>"
         await bot.send_message(int(admin_chat),f"<b>Новая заявка #{order_id}</b>\n\n{html.escape(offer.title)} · {html.escape(offer.price)}\nКлиент: {contact}\n\n{html.escape(brief)}",parse_mode=ParseMode.HTML)
+    track(message.from_user.id,"order_created",data.get("shop_source","direct"),key)
     await state.clear()
     await message.answer(f"<b>Заявка #{order_id} принята</b>\n\nНапишем после просмотра задачи. Никакой оплаты вслепую",parse_mode=ParseMode.HTML,reply_markup=storefront())
 
@@ -541,8 +550,23 @@ async def series_pack(c:CallbackQuery):
             created.append(draft_id); await wait.edit_text(f"🎞 <b>{html.escape(name)}</b>\n\nГотово {index}/3",parse_mode=ParseMode.HTML)
     except Exception as exc:
         log.exception("Series pack failed"); return await wait.edit_text(f"⚠️ Создано {len(created)}/3. Ошибка: {html.escape(str(exc)[:240])}",parse_mode=ParseMode.HTML)
-    await wait.edit_text(f"✅ <b>Сезон готов</b>\n\nЧерновики: {', '.join('#'+str(x) for x in created)}\nКаждый выпуск пришёл отдельной карточкой",parse_mode=ParseMode.HTML)
+    pack=",".join(str(x) for x in created)
+    await wait.edit_text(f"✅ <b>Сезон готов</b>\n\nЧерновики: {', '.join('#'+str(x) for x in created)}\nКаждый выпуск пришёл отдельной карточкой",parse_mode=ParseMode.HTML,
+      reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📅 Расставить на 3 дня",callback_data=f"schedulepack:{pack}")]]))
     for draft_id in created: await review(draft_id)
+
+@router.callback_query(F.data.startswith("schedulepack:"))
+async def schedule_pack(c:CallbackQuery):
+    if not admin(c): return
+    raw=c.data.split(":",1)[1]; ids=[int(x) for x in raw.split(",") if x.isdigit()][:7]
+    drafts=[db.draft(x) for x in ids]
+    if not drafts or any(not x or x["status"]!="review" for x in drafts): return await c.answer("Часть выпусков уже опубликована или запланирована",show_alert=True)
+    channel=drafts[0]["channel_key"]; hour,minute=map(int,settings.schedules[channel][0].split(":")); now=datetime.now(settings.timezone)
+    dates=[]
+    for offset,(draft_id,draft) in enumerate(zip(ids,drafts),1):
+        when=(now+timedelta(days=offset)).replace(hour=hour,minute=minute,second=0,microsecond=0)
+        db.update(draft_id,status="scheduled",scheduled_at=when.isoformat()); dates.append(f"#{draft_id} · {when:%d.%m %H:%M}")
+    await c.message.edit_text("📅 <b>Сезон поставлен в очередь</b>\n\n"+"\n".join(dates),parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer("Готово")
 
 @router.callback_query(F.data.startswith("publish:"))
 async def pub_cb(c:CallbackQuery):
@@ -715,6 +739,17 @@ async def panel_analytics(c:CallbackQuery):
     if not admin(c): return
     await c.answer("Обновляю показатели…"); wait=await c.message.answer("📊 Обновляю просмотры, реакции и пересылки…")
     result=await analytics.sync(); await wait.edit_text(f"{analytics.report()}\n\nОбновлено: {result['updated']} · Ошибок: {len(result['errors'])}",reply_markup=back_menu())
+
+@router.callback_query(F.data=="panel:funnel")
+async def panel_funnel(c:CallbackQuery):
+    if not admin(c): return
+    try: report=summarize_funnel(db.funnel_events())
+    except Exception: report=summarize_funnel([])
+    sources="\n".join(f"• {html.escape(key)}: {value}" for key,value in report["sources"].most_common()) or "переходов пока нет"
+    offers="\n".join(f"• {html.escape(OFFERS[key].title if key in OFFERS else key)}: {value}" for key,value in report["offers"].most_common()) or "заявок пока нет"
+    text=(f"🎯 <b>Воронка продаж</b>\n\nПереходы: <b>{report['landings']}</b>\nОткрытия услуг: <b>{report['offer_views']}</b>\n"
+          f"Заявки: <b>{report['orders']}</b>\nКонверсия переход → заявка: <b>{report['conversion']}%</b>\n\n<b>Источники</b>\n{sources}\n\n<b>Что покупают</b>\n{offers}")
+    await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
 
 @router.callback_query(F.data=="panel:status")
 async def panel_status(c:CallbackQuery):
