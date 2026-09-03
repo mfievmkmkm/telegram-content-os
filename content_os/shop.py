@@ -23,6 +23,7 @@ OFFERS = {
 
 def storefront() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎯 Бесплатная экспресс-диагностика", callback_data="shop:diagnostic")],
         [InlineKeyboardButton(text="⚽ Для футболиста", callback_data="shop:category:liga")],
         [InlineKeyboardButton(text="🎁 Для владельца Gifts", callback_data="shop:category:gifts")],
         [InlineKeyboardButton(text="🧠 Для Telegram-канала", callback_data="shop:offer:content_pack")],

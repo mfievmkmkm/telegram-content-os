@@ -58,6 +58,7 @@ class MatchState(StatesGroup):
 
 class ShopState(StatesGroup):
     waiting_brief = State()
+    waiting_diagnostic = State()
 
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
 
@@ -167,6 +168,27 @@ async def shop_order(c:CallbackQuery,state:FSMContext):
     if key not in OFFERS: return await c.answer("Услуга не найдена",show_alert=True)
     current=await state.get_data(); await state.set_state(ShopState.waiting_brief); await state.update_data(offer_key=key,shop_source=current.get("shop_source","direct"))
     await c.message.edit_text("<b>Одним сообщением:</b> что у тебя сейчас и какой результат хочешь получить?\n\nМожно приложить ссылку на канал, Gift или видео следующим сообщением",parse_mode=ParseMode.HTML); await c.answer()
+
+@router.callback_query(F.data=="shop:diagnostic")
+async def diagnostic_start(c:CallbackQuery,state:FSMContext):
+    if db.get(f"free_diagnostic:{c.from_user.id}"): return await c.answer("Ты уже использовал бесплатную диагностику",show_alert=True)
+    await state.set_state(ShopState.waiting_diagnostic)
+    await c.message.edit_text("🎯 <b>Бесплатная экспресс-диагностика</b>\n\nНачни сообщение со слова <b>Футбол</b> или <b>Gifts</b>, затем коротко опиши проблему\n\nНапример: <i>Футбол. Теряю место в составе после двух слабых матчей</i>",parse_mode=ParseMode.HTML); await c.answer()
+
+@router.message(ShopState.waiting_diagnostic)
+async def diagnostic_result(message:Message,state:FSMContext):
+    brief=(message.text or "").strip(); lower=brief.lower()
+    if len(brief)<20 or not (lower.startswith("футбол") or lower.startswith("gifts")):
+        return await message.answer("Начни с «Футбол» или «Gifts» и опиши ситуацию немного подробнее")
+    channel="liga" if lower.startswith("футбол") else "gifts"; offer_key="liga_episode" if channel=="liga" else "gifts_audit"
+    wait=await message.answer("🧠 Ищу не очевидный совет, а реальную слабую точку…")
+    system=(CHANNELS[channel]["voice"]+"\nТы проводишь бесплатную экспресс-диагностику потенциальному клиенту. "
+      "Дай 3 коротких наблюдения: что человек, вероятно, недооценивает; что проверить прямо сейчас; какой следующий шаг. "
+      "Не придумывай факты и не обещай результат. 450–650 знаков. Используй максимум один эмодзи. Последняя строка без точки")
+    try: result=await editor.llm(system,brief,.65)
+    except Exception: result="Проблема понятна, но данных пока мало для честного вывода. Зафиксируй один конкретный эпизод или Gift, решение, которое ты принял, и результат. Тогда станет видно не симптом, а место, где действительно теряется преимущество"
+    db.set(f"free_diagnostic:{message.from_user.id}",datetime.now(settings.timezone).isoformat()); await state.clear()
+    await wait.edit_text(telegram_html(result)+"\n\n<b>Хочешь разобрать это на конкретных данных?</b>",parse_mode=ParseMode.HTML,reply_markup=offer_keyboard(offer_key))
 
 @router.message(ShopState.waiting_brief)
 async def shop_brief(message:Message,state:FSMContext):
