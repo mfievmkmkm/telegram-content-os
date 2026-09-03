@@ -7,6 +7,7 @@ import aiohttp
 from .channels import CHANNELS, POST_RULES
 from .hooks import score_hook
 from .sources import collect_items
+from .formatting import clean_generated_post, plain_text
 
 
 class Editor:
@@ -44,12 +45,13 @@ class Editor:
                 if first: radar.append(first[:180])
         trends=("\n\nЧУЖОЙ РАДАР ТЕМ — используй только как сигнал интереса. Не копируй формулировки и выводы:\n- "+"\n- ".join(radar)) if radar else ""
         prompt = f"Рубрика: {format_key}. Создай оригинальный пост.\n{facts}{style}{trends}"
-        text = await self.llm(cfg["voice"]+POST_RULES,prompt)
-        score, reasons = score_hook(text)
+        text = clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt))
+        score, reasons = score_hook(plain_text(text))
         if score < 3:
             text = await self.llm(cfg["voice"]+POST_RULES,
                 f"Хук получил {score}/5. Проблемы: {', '.join(reasons)}. Перепиши весь пост, начни намного сильнее.\n\n{text}",.95)
-            score, _ = score_hook(text)
+            text = clean_generated_post(text)
+            score, _ = score_hook(plain_text(text))
         digest = hashlib.sha256(material["url"].encode()).hexdigest() if material["url"] else None
         return self.db.save_draft(channel_key,format_key,text,score,material["title"],material["url"],digest)
 
@@ -57,16 +59,16 @@ class Editor:
         instructions={"harder":"Усиль конфликт, сарказм и первую строку. Не меняй факты.",
                       "rewrite":"Полностью другой заход и структура. Сохрани факты.",
                       "short":"Сократи до 500–700 знаков, оставь ударные мысли."}
-        text=await self.llm(CHANNELS[draft["channel_key"]]["voice"]+POST_RULES,
-                            f"{instructions[mode]} Верни только пост.\n\n{draft['text']}")
-        return text, score_hook(text)[0]
+        text=clean_generated_post(await self.llm(CHANNELS[draft["channel_key"]]["voice"]+POST_RULES,
+                            f"{instructions[mode]} Верни только пост.\n\n{draft['text']}"))
+        return text, score_hook(plain_text(text))[0]
 
     async def create_gifts_data_post(self,facts):
         if not facts: raise RuntimeError("Рыночные источники не вернули пригодных данных")
         prompt=("Создай пост только по фактам ниже. Выбери один неожиданный конфликт, а не перечисляй всё. "
                 "Не называй это сигналом на покупку. Все использованные цифры сохрани точно.\n\nДАННЫЕ:\n"+facts)
-        text=await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,prompt,.8); score,_=score_hook(text)
+        text=clean_generated_post(await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,prompt,.8)); score,_=score_hook(plain_text(text))
         if score<3:
             text=await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,f"Перепиши с более сильным хуком. Данные не меняй.\n{text}",.9)
-            score,_=score_hook(text)
+            text=clean_generated_post(text); score,_=score_hook(plain_text(text))
         return self.db.save_draft("gifts","data_desk",text,score,"Gifts Data Desk","",None)
