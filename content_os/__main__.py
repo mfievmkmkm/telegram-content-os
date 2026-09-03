@@ -28,6 +28,8 @@ from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
 from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
 from .funnel import summarize_funnel
+from .brand_cards import gift_card
+from .mtproto_publish import PremiumPublisher
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -39,6 +41,7 @@ gifts_data=GiftsDataDesk(settings)
 analytics=AnalyticsCollector(settings,db)
 matchlens=MatchLensClient(settings,db)
 football=FootballRadar(settings)
+premium_publisher=PremiumPublisher(settings)
 bot=Bot(settings.bot_token); router=Router(); dp=Dispatcher(); dp.include_router(router)
 logging.basicConfig(level=getattr(logging, __import__("os").getenv("LOG_LEVEL","INFO").upper()))
 log=logging.getLogger("content-os")
@@ -95,7 +98,7 @@ def back_menu():
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
     if chat:
-        image=await discover_image(draft["source_url"] or "")
+        image=BufferedInputFile(gift_card(draft["text"],draft["format_key"]),filename=f"gi-{draft_id}.png") if draft["channel_key"]=="gifts" else await discover_image(draft["source_url"] or "")
         if image:
             try: await bot.send_photo(int(chat),image,caption="🖼 Бесплатная иллюстрация из исходного материала")
             except Exception: log.info("Source image unavailable: %s",image)
@@ -117,15 +120,29 @@ async def generate(channel_key):
 
 async def publish(draft_id):
     draft=db.draft(draft_id); channel=settings.channels[draft["channel_key"]]
-    image=await discover_image(draft["source_url"] or "")
-    if image:
-        try: await bot.send_photo(channel,image)
-        except Exception: log.info("Source image unavailable during publish: %s",image)
     sales_markup=None
+    sales_link=None
     if settings.shop_cta_every and int(draft_id)%settings.shop_cta_every==0:
         me=await bot.get_me(); slug="service_liga" if draft["channel_key"]=="liga" else "service_gifts"
-        sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=f"https://t.me/{me.username}?start={slug}")]])
-    sent=await bot.send_message(channel,render(draft["channel_key"],draft["text"]),parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup)
+        label="Разобрать мой эпизод" if draft["channel_key"]=="liga" else "Проверить мой Gift"
+        sales_url=f"https://t.me/{me.username}?start={slug}"
+        if premium_publisher.ready:
+            sales_link=f'\n\n<a href="{sales_url}"><b>{label} →</b></a>'
+        else:
+            sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=sales_url)]])
+    rendered=render(draft["channel_key"],draft["text"])+(sales_link or "")
+    if premium_publisher.ready:
+        image=gift_card(draft["text"],draft["format_key"]) if draft["channel_key"]=="gifts" else None
+        sent=await premium_publisher.send(channel,rendered,image)
+    elif draft["channel_key"]=="gifts":
+        card=BufferedInputFile(gift_card(draft["text"],draft["format_key"]),filename=f"gi-{draft_id}.png")
+        sent=await bot.send_photo(channel,card,caption=rendered,parse_mode=ParseMode.HTML,reply_markup=sales_markup)
+    else:
+        image=await discover_image(draft["source_url"] or "")
+        if image:
+            try: await bot.send_photo(channel,image)
+            except Exception: log.info("Source image unavailable during publish: %s",image)
+        sent=await bot.send_message(channel,rendered,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup)
     db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=sent.message_id)
 
 @router.message(CommandStart())
@@ -285,6 +302,7 @@ async def panel_system(c:CallbackQuery):
     if not admin(c): return
     await c.message.edit_text("⚙️ <b>Система</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="🟢 Состояние",callback_data="panel:status"),InlineKeyboardButton(text="✨ Premium эмодзи",callback_data="panel:emojihelp")],
+      [InlineKeyboardButton(text="📚 База курсов",callback_data="panel:courses")],
       [InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync"),InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics")],
       [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
 
@@ -480,6 +498,25 @@ async def sync_history(message:Message):
         detail=item.error if item.error else f"найдено {item.found}, новых {item.added}"
         lines.append(f"{mark} @{item.channel} · {item.role}: {detail}")
     await wait.edit_text("<b>Синхронизация завершена</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML)
+
+@router.message(Command("coursesync"))
+async def course_sync(message:Message):
+    if not admin(message): return
+    wait=await message.answer("📚 Читаю только разрешённые каналы курсов…")
+    try: results=await history.sync_courses()
+    except Exception as exc: return await wait.edit_text(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    lines=[f"{'❌' if x.error else '✅'} {html.escape(x.channel)}: найдено {x.found}, новых {x.added}{' · '+html.escape(x.error) if x.error else ''}" for x in results]
+    await wait.edit_text("📚 <b>База курсов обновлена</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML)
+
+@router.message(Command("coursepost"))
+async def course_post(message:Message):
+    if not admin(message): return
+    parts=(message.text or "").split(); channel=parts[1].lower() if len(parts)>1 else "gifts"
+    if channel not in {"liga","gifts"}: return await message.answer("Формат: <code>/coursepost gifts</code> или <code>/coursepost liga</code>",parse_mode=ParseMode.HTML)
+    wait=await message.answer("🧠 Превращаю принцип из курсов в оригинальный пост…")
+    try: draft_id=await editor.create_from_courses(channel)
+    except Exception as exc: return await wait.edit_text(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    await wait.delete(); await review(draft_id)
 
 @router.message(Command("generate"))
 async def menu(message:Message,state:FSMContext):
@@ -785,9 +822,34 @@ async def panel_status(c:CallbackQuery):
     counts="\n".join(f"@{r['source_channel']}: {r['count']}" for r in db.import_counts()) or "история ещё не загружена"
     text=(f"🟢 <b>Состояние системы</b>\n\nAI: {'готов' if settings.llm_key else 'нет ключа'}\n"
           f"🎥 MatchLens: {'готов' if matchlens.ready else 'не подключён'}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n"
-          f"🧬 Полный Telegram-парсер: {'готов' if history.mtproto_ready else 'публичный режим'}\n🎬 Shorts: {'готов' if settings.mpt_base_url else 'не подключён'}\n"
+          f"🧬 Полный Telegram-парсер: {'готов' if history.mtproto_ready else 'публичный режим'}\n✨ Premium-публикация: {'готова' if premium_publisher.ready else 'Bot API'}\n🎬 Shorts: {'готов' if settings.mpt_base_url else 'не подключён'}\n"
           f"Автопубликация: {'да' if settings.auto_publish else 'нет'}\n\n<b>Память:</b>\n{counts}")
     await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
+
+@router.callback_query(F.data=="panel:courses")
+async def panel_courses(c:CallbackQuery):
+    if not admin(c): return
+    buttons=[
+      [InlineKeyboardButton(text="🔄 Загрузить новые уроки",callback_data="panel:coursesync")],
+      [InlineKeyboardButton(text="🎁 Пост для Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="⚽ Пост для Лиги",callback_data="coursemake:liga")],
+      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]
+    await c.message.edit_text("📚 <b>Course Intelligence</b>\n\nЧитает только каналы из COURSE_CHANNELS, извлекает идеи и никогда не указывает курс в посте",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
+
+@router.callback_query(F.data=="panel:coursesync")
+async def panel_course_sync(c:CallbackQuery):
+    if not admin(c): return
+    await c.answer("Обновляю базу…"); wait=await c.message.answer("📚 Читаю разрешённые каналы…")
+    try: results=await history.sync_courses()
+    except Exception as exc: return await wait.edit_text(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    await wait.edit_text("📚 Готово\n\n"+"\n".join(f"{x.channel}: +{x.added}" for x in results),reply_markup=back_menu())
+
+@router.callback_query(F.data.startswith("coursemake:"))
+async def panel_course_make(c:CallbackQuery):
+    if not admin(c): return
+    channel=c.data.split(":",1)[1]; await c.answer("Собираю оригинальный пост…")
+    try: draft_id=await editor.create_from_courses(channel)
+    except Exception as exc: return await c.message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    await review(draft_id)
 
 @router.callback_query(F.data.in_({"panel:shorts","panel:matchhelp","panel:targethelp","panel:newplayer","panel:linkhelp","panel:passporthelp","panel:emojihelp"}))
 async def panel_help(c:CallbackQuery):
