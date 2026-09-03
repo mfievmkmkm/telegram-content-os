@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import os
 import tempfile
 from urllib.parse import urlparse
+from urllib.parse import urljoin
 
 import aiohttp
 
@@ -70,6 +71,7 @@ class MatchLensClient:
                 response.raise_for_status(); data=await response.json()
         status=str(data.get("status","processing")); progress=max(0,min(100,int(data.get("progress",0))))
         result=data.get("report_url") or data.get("result_url")
+        if result: result=urljoin(self.base_url+"/",str(result).lstrip("/"))
         import json
         metrics=json.dumps(data.get("metrics"),ensure_ascii=False) if data.get("metrics") else None
         self.db.update_match_job(local_id,status=status,progress=progress,result_url=result,error=data.get("error"),metrics_json=metrics)
