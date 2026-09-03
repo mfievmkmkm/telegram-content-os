@@ -52,14 +52,7 @@ class VideoFactory:
         if not self.settings.mpt_base_url:
             raise RuntimeError("Видеосервер MoneyPrinterTurbo ещё не подключён")
         headers={"x-api-key":self.settings.mpt_api_key} if self.settings.mpt_api_key else {}
-        terms=[str(scene.get("visual","")).strip() for scene in data["scenes"] if scene.get("visual")]
-        body={
-            "video_subject":data["title"], "video_script":data["voiceover"],
-            "video_terms":terms[:8], "video_aspect":"9:16", "video_source":"pexels",
-            "video_concat_mode":"sequential", "video_clip_duration":4, "video_count":1,
-            "voice_name":self.settings.mpt_voice_name, "subtitle_enabled":True,
-            "bgm_type":"random", "bgm_volume":0.18, "voice_volume":1.0,
-        }
+        body=self.mpt_payload(data)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90),headers=headers) as session:
             created=await self._request_json(session,"POST","/api/v1/videos",json=body)
             task_id=str(self._data(created).get("task_id","")).strip()
@@ -73,7 +66,11 @@ class VideoFactory:
                 if progress and current!=last_progress:
                     await progress(current); last_progress=current
                 state=int(status.get("state",0) or 0)
-                if state<0: raise RuntimeError(str(status.get("error") or "рендер завершился с ошибкой")[:300])
+                if state<0:
+                    error=str(status.get("error") or "рендер завершился с ошибкой")[:500]
+                    if "combined-1.mp4" in error or "FileNotFoundError" in error:
+                        raise RuntimeError("MoneyPrinterTurbo не получил видеоклипы от Pexels. Проверь PEXELS_API_KEY в Shorts Worker и его логи")
+                    raise RuntimeError(error)
                 output=status.get("videos") or status.get("combined_videos") or []
                 if state==1 and output:
                     video_url=urljoin(self.settings.mpt_base_url+"/",str(output[0]).lstrip("/"))
@@ -83,6 +80,24 @@ class VideoFactory:
                         if len(content)>49*1024*1024: raise RuntimeError("готовое видео больше лимита Telegram 49 МБ")
                         return task_id,content
             raise RuntimeError(f"рендер не завершился за {self.settings.mpt_timeout_minutes} минут")
+
+    def mpt_payload(self,data):
+        broad={
+          "liga":["football training","soccer field","athlete running","football boots","sports coaching"],
+          "gifts":["smartphone technology","digital art","financial chart","neon abstract","online marketplace"],
+        }
+        suggested=[str(scene.get("visual","")).strip() for scene in data["scenes"] if scene.get("visual")]
+        terms=[]
+        for term in broad.get(data.get("channel"),broad["liga"])+suggested[:2]:
+            if term and term.lower() not in {item.lower() for item in terms}: terms.append(term)
+        return {
+            "video_subject":data["title"], "video_script":data["voiceover"],
+            "video_terms":terms[:7], "video_aspect":"9:16", "video_source":"pexels",
+            "video_concat_mode":"random", "video_transition_mode":"None", "video_clip_duration":4, "video_count":1,
+            "voice_name":self.settings.mpt_voice_name, "subtitle_enabled":True,
+            "subtitle_position":"bottom", "video_language":"ru-RU",
+            "bgm_type":"random", "bgm_volume":0.18, "voice_volume":1.0,
+        }
 
     async def _request_json(self,session,method,path,**kwargs):
         async with session.request(method,self.settings.mpt_base_url+path,**kwargs) as response:
