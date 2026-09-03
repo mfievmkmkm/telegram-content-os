@@ -26,6 +26,7 @@ from .formatting import telegram_html
 from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
+from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -54,6 +55,9 @@ class MatchState(StatesGroup):
     waiting_player = State()
     waiting_mode = State()
 
+class ShopState(StatesGroup):
+    waiting_brief = State()
+
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
 
 def render(channel_key,text):
@@ -75,6 +79,7 @@ def main_keyboard():
       [InlineKeyboardButton(text="⚽ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="🎁 Gifts Data",callback_data="panel:gifts")],
       [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players"),InlineKeyboardButton(text="🎬 Shorts",callback_data="panel:shorts")],
       [InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics"),InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
+      [InlineKeyboardButton(text="🛒 Магазин услуг",callback_data="panel:shop")],
       [InlineKeyboardButton(text="⚙️ Настройки и статус",callback_data="panel:system")]])
 
 def back_menu():
@@ -108,8 +113,58 @@ async def publish(draft_id):
 
 @router.message(CommandStart())
 async def start(message:Message):
-    if not admin(message): return await message.answer("Это закрытая редакция.")
+    if not admin(message):
+        return await message.answer("<b>Здесь не продают воздух</b>\n\nВыбери, где сейчас болит сильнее — футбол, Gifts или собственный Telegram-канал",parse_mode=ParseMode.HTML,reply_markup=storefront())
     db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS</b>\n\nВся редакция теперь управляется кнопками. Выбирай раздел:",parse_mode=ParseMode.HTML,reply_markup=main_keyboard())
+
+@router.message(Command("shop"))
+async def shop_command(message:Message,state:FSMContext):
+    await state.clear()
+    await message.answer("<b>Выбери направление</b>",parse_mode=ParseMode.HTML,reply_markup=storefront())
+
+@router.callback_query(F.data=="shop:home")
+async def shop_home(c:CallbackQuery,state:FSMContext):
+    await state.clear(); await c.message.edit_text("<b>Выбери направление</b>",parse_mode=ParseMode.HTML,reply_markup=storefront()); await c.answer()
+
+@router.callback_query(F.data.startswith("shop:category:"))
+async def shop_category(c:CallbackQuery):
+    category=c.data.rsplit(":",1)[-1]
+    if category not in {"liga","gifts"}: return await c.answer("Раздел не найден",show_alert=True)
+    title="Футбольная лаборатория" if category=="liga" else "Gifts Intelligence"
+    await c.message.edit_text(f"<b>{title}</b>\n\nВыбирай не красивое название, а проблему, которую надо закрыть",parse_mode=ParseMode.HTML,reply_markup=category_keyboard(category)); await c.answer()
+
+@router.callback_query(F.data.startswith("shop:offer:"))
+async def shop_offer(c:CallbackQuery):
+    key=c.data.rsplit(":",1)[-1]; offer=OFFERS.get(key)
+    if not offer: return await c.answer("Услуга не найдена",show_alert=True)
+    await c.message.edit_text(f"<b>{html.escape(offer.title)}</b>\n{html.escape(offer.price)}\n\n{html.escape(offer.description)}\n\nСначала уточним задачу. Оплата — только после согласования объёма",parse_mode=ParseMode.HTML,reply_markup=offer_keyboard(key)); await c.answer()
+
+@router.callback_query(F.data.startswith("shop:order:"))
+async def shop_order(c:CallbackQuery,state:FSMContext):
+    key=c.data.rsplit(":",1)[-1]
+    if key not in OFFERS: return await c.answer("Услуга не найдена",show_alert=True)
+    await state.set_state(ShopState.waiting_brief); await state.update_data(offer_key=key)
+    await c.message.edit_text("<b>Одним сообщением:</b> что у тебя сейчас и какой результат хочешь получить?\n\nМожно приложить ссылку на канал, Gift или видео следующим сообщением",parse_mode=ParseMode.HTML); await c.answer()
+
+@router.message(ShopState.waiting_brief)
+async def shop_brief(message:Message,state:FSMContext):
+    brief=(message.text or message.caption or "").strip()
+    if len(brief)<5: return await message.answer("Напиши чуть подробнее — хотя бы одним нормальным предложением")
+    data=await state.get_data(); key=data.get("offer_key",""); offer=OFFERS.get(key)
+    if not offer: await state.clear(); return await message.answer("Заявка устарела. Открой /shop заново")
+    username=(message.from_user.username or "") if message.from_user else ""
+    try:
+        order_id=db.save_service_order(message.from_user.id,username,key,brief)
+    except Exception:
+        # Keep the lead alive while an older Supabase schema is still deployed.
+        log.exception("Could not persist service order; delivering it to admin directly")
+        order_id=f"TG-{message.message_id}"
+    admin_chat=db.get("admin_chat_id")
+    if admin_chat:
+        contact=f"@{username}" if username else f"ID <code>{message.from_user.id}</code>"
+        await bot.send_message(int(admin_chat),f"<b>Новая заявка #{order_id}</b>\n\n{html.escape(offer.title)} · {html.escape(offer.price)}\nКлиент: {contact}\n\n{html.escape(brief)}",parse_mode=ParseMode.HTML)
+    await state.clear()
+    await message.answer(f"<b>Заявка #{order_id} принята</b>\n\nНапишем после просмотра задачи. Никакой оплаты вслепую",parse_mode=ParseMode.HTML,reply_markup=storefront())
 
 @router.message(Command("menu"))
 async def dashboard(message:Message,state:FSMContext):
@@ -127,6 +182,11 @@ async def panel_generate(c:CallbackQuery,state:FSMContext):
     await state.clear(); await c.message.edit_text("Куда бьём?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="⚽ Лига",callback_data="gen:liga"),InlineKeyboardButton(text="🎁 Gifts",callback_data="gen:gifts")],
       [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+
+@router.callback_query(F.data=="panel:shop")
+async def panel_shop(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    await state.clear(); await c.message.edit_text("🛒 <b>Магазин глазами клиента</b>",parse_mode=ParseMode.HTML,reply_markup=storefront()); await c.answer()
 
 @router.callback_query(F.data=="panel:football")
 async def panel_football(c:CallbackQuery):
@@ -634,7 +694,7 @@ async def due():
 
 async def main():
     db.init(); scheduler=AsyncIOScheduler(timezone=settings.timezone)
-    await bot.set_my_commands([BotCommand(command="menu",description="открыть панель управления"),BotCommand(command="generate",description="создать пост"),
+    await bot.set_my_commands([BotCommand(command="shop",description="магазин услуг"),BotCommand(command="menu",description="открыть панель управления"),BotCommand(command="generate",description="создать пост"),
       BotCommand(command="scheduled",description="очередь публикаций"),BotCommand(command="games",description="матчи сегодня"),
       BotCommand(command="match",description="разобрать видео"),BotCommand(command="status",description="состояние системы")])
     for channel,times in settings.schedules.items():

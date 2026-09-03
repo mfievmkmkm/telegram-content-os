@@ -127,3 +127,8 @@ class SupabaseDatabase:
         ids=[row["match_job_id"] for row in links]
         matches=self.client.table("content_os_match_jobs").select("*").in_("id",ids).order("created_at").execute().data if ids else []
         return (players[0] if players else None),matches
+
+    def save_service_order(self,user_id,username,offer_key,brief):
+        rows=self.client.table("content_os_service_orders").insert({"user_id":user_id,"username":username,
+          "offer_key":offer_key,"brief":brief,"created_at":datetime.now(self.timezone).isoformat()}).execute().data
+        return rows[0]["id"]

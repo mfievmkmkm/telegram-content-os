@@ -48,6 +48,10 @@ class Database:
             CREATE TABLE IF NOT EXISTS player_matches(
               player_id INTEGER NOT NULL,match_job_id INTEGER NOT NULL,created_at TEXT NOT NULL,
               PRIMARY KEY(player_id,match_job_id));
+            CREATE TABLE IF NOT EXISTS service_orders(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,username TEXT,
+              offer_key TEXT NOT NULL,brief TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',
+              created_at TEXT NOT NULL);
             """)
             columns={row[1] for row in db.execute("PRAGMA table_info(drafts)")}
             if "published_message_id" not in columns:
@@ -174,3 +178,9 @@ class Database:
             player=db.execute("SELECT * FROM players WHERE id=?",(player_id,)).fetchone()
             matches=db.execute("SELECT j.* FROM match_jobs j JOIN player_matches p ON p.match_job_id=j.id WHERE p.player_id=? ORDER BY j.created_at",(player_id,)).fetchall()
         return player,matches
+
+    def save_service_order(self,user_id,username,offer_key,brief):
+        with self.connect() as db:
+            cur=db.execute("INSERT INTO service_orders(user_id,username,offer_key,brief,created_at) VALUES(?,?,?,?,?)",
+                           (user_id,username,offer_key,brief,datetime.now(self.timezone).isoformat()))
+            return cur.lastrowid
