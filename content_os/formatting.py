@@ -37,3 +37,27 @@ def telegram_html(value: str) -> str:
 
 def plain_text(value: str) -> str:
     return re.sub(r"<[^>]+>", "", clean_generated_post(value))
+
+
+EMOJI_SETS = {
+    "liga": ("⚡", "🧠", "⚽", "🔥", "🎯", "🥶", "👀"),
+    "gifts": ("💎", "📉", "🎁", "🔥", "🧠", "👀", "⚠️"),
+}
+
+
+def decorate_post(value: str, channel_key: str) -> str:
+    """Guarantee readable emphasis and emoji anchors even when the LLM ignores markup."""
+    text=plain_text(value)
+    text=re.sub(r"\*\*|__|(?<!\*)\*(?!\*)", "", text)
+    paragraphs=[part.strip() for part in re.split(r"\n\s*\n",text) if part.strip()]
+    if not paragraphs: return text
+    emojis=EMOJI_SETS.get(channel_key,EMOJI_SETS["liga"])
+    paragraphs[0]=f"{emojis[0]} <b>{paragraphs[0]}</b>"
+    if len(paragraphs)>2:
+        paragraphs[1]=f"{emojis[1]} {paragraphs[1]}"
+        paragraphs[-2]=f"{emojis[3]} <i>{paragraphs[-2]}</i>"
+    elif len(paragraphs)==2:
+        paragraphs[1]=f"{emojis[1]} <i>{paragraphs[1]}</i>"
+    last=paragraphs[-1]
+    if not last.startswith(emojis): paragraphs[-1]=f"{emojis[2]} {last}"
+    return "\n\n".join(paragraphs)
