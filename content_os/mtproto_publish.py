@@ -23,6 +23,19 @@ class PremiumPublisher:
     @property
     def ready(self):
         return bool(self.settings.publish_via_mtproto and self.settings.telegram_api_id and self.settings.telegram_api_hash and self.settings.telegram_session)
+    async def probe(self,channel):
+        if not self.ready: return False,"переменные MTProto не заполнены"
+        client=TelegramClient(StringSession(self.settings.telegram_session),self.settings.telegram_api_id,self.settings.telegram_api_hash)
+        await client.connect()
+        try:
+            if not await client.is_user_authorized(): return False,"сессия Telegram не авторизована"
+            entity=await client.get_entity(channel)
+            permissions=await client.get_permissions(entity,"me")
+            if getattr(entity,"broadcast",False) and not (getattr(permissions,"is_admin",False) or getattr(permissions,"is_creator",False)):
+                return False,"Premium-аккаунт не администратор канала"
+            return True,"доступ к каналу подтверждён"
+        except Exception as exc: return False,f"{type(exc).__name__}: {str(exc)[:160]}"
+        finally: await client.disconnect()
     async def send(self,channel,html_text,image=None):
         text,entities=parse_entities(html_text); client=TelegramClient(StringSession(self.settings.telegram_session),self.settings.telegram_api_id,self.settings.telegram_api_hash)
         await client.connect()
