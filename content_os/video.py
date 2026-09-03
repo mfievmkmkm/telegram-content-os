@@ -64,6 +64,8 @@ class VideoFactory:
                 try:
                     status=self._data(await self._request_json(session,"GET",f"/api/v1/tasks/{task_id}"))
                 except (aiohttp.ClientError,asyncio.TimeoutError,RuntimeError) as exc:
+                    if "task not found" in str(exc).lower():
+                        raise RuntimeError("Shorts Worker перезапустился во время склейки и потерял задачу. Проверь память сервиса и запусти Shorts заново") from exc
                     if self.transient_status_error(exc):
                         if progress and last_progress<5:
                             await progress(5); last_progress=5
