@@ -110,10 +110,12 @@ class HistoryImporter:
         await client.connect(); results=[]
         try:
             if not await client.is_user_authorized(): raise RuntimeError("Telegram session не авторизована")
+            await client.get_dialogs()
             for channel in self.settings.course_channels:
                 found=added=0
                 try:
-                    async for message in client.iter_messages(channel,limit=self.settings.course_import_limit):
+                    entity=int(channel) if channel.lstrip("-").isdigit() else channel
+                    async for message in client.iter_messages(entity,limit=self.settings.course_import_limit):
                         text=(message.message or "").strip()
                         if len(text)<80: continue
                         found+=1; added+=self.db.save_course_note(channel,message.id,text[:12000],message.date.isoformat() if message.date else None)
