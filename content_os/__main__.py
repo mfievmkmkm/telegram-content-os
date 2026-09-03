@@ -22,6 +22,7 @@ from .analytics import AnalyticsCollector
 from .video import VideoFactory
 from .formatting import telegram_html
 from .media import discover_image
+from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -31,12 +32,18 @@ videos=VideoFactory(settings,db,editor)
 history=HistoryImporter(db)
 gifts_data=GiftsDataDesk(settings)
 analytics=AnalyticsCollector(settings,db)
+matchlens=MatchLensClient(settings,db)
 bot=Bot(settings.bot_token); router=Router(); dp=Dispatcher(); dp.include_router(router)
 logging.basicConfig(level=getattr(logging, __import__("os").getenv("LOG_LEVEL","INFO").upper()))
 log=logging.getLogger("content-os")
 
 class ScheduleState(StatesGroup):
     waiting_datetime = State()
+
+class MatchState(StatesGroup):
+    waiting_source = State()
+    waiting_player = State()
+    waiting_mode = State()
 
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
 
@@ -76,7 +83,57 @@ async def publish(draft_id):
 @router.message(CommandStart())
 async def start(message:Message):
     if not admin(message): return await message.answer("Это закрытая редакция.")
-    db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS запущена</b>\n\n/generate — новый материал\n/giftpost — пост из рыночных данных\n/sync — обновить историю каналов\n/analytics — эффективность постов\n/status — состояние",parse_mode=ParseMode.HTML)
+    db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS запущена</b>\n\n/generate — новый материал\n/giftpost — пост из рыночных данных\n/match — разобрать матч\n/matchstatus — состояние разбора\n/sync — обновить историю каналов\n/analytics — эффективность постов\n/status — состояние",parse_mode=ParseMode.HTML)
+
+@router.message(Command("match"))
+async def match_start(message:Message,state:FSMContext):
+    if not admin(message): return
+    await state.clear(); await state.set_state(MatchState.waiting_source)
+    await message.answer("⚽ <b>MatchLens</b>\n\nПришли ссылку на полный матч, тайм или игровой эпизод. Подойдут YouTube и прямая ссылка на файл.\n\nЗагрузку больших видео прямо в Telegram добавим вместе с видеосервером.",parse_mode=ParseMode.HTML)
+
+@router.message(MatchState.waiting_source)
+async def match_source(message:Message,state:FSMContext):
+    if not admin(message): return
+    source=(message.text or "").strip()
+    try: MatchRequest("url",source,"проверка").validate()
+    except ValueError: return await message.answer("Нужна полная ссылка, начинающаяся с http:// или https://")
+    await state.update_data(source_ref=source); await state.set_state(MatchState.waiting_player)
+    await message.answer("Кого выделяем? Напиши, например:\n\n<code>№7, синяя форма, правый вингер</code>\nили\n<code>вся команда в белом</code>",parse_mode=ParseMode.HTML)
+
+@router.message(MatchState.waiting_player)
+async def match_player(message:Message,state:FSMContext):
+    if not admin(message): return
+    player=(message.text or "").strip()
+    if len(player)<2: return await message.answer("Опиши номер, цвет формы и позицию чуть точнее.")
+    await state.update_data(player_ref=player); await state.set_state(MatchState.waiting_mode)
+    await message.answer("Что собираем?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="👤 Только игрок",callback_data="matchmode:player"),InlineKeyboardButton(text="🧩 Команда",callback_data="matchmode:team")],
+      [InlineKeyboardButton(text="🔥 Полный разбор",callback_data="matchmode:full")]]))
+
+@router.callback_query(MatchState.waiting_mode,F.data.startswith("matchmode:"))
+async def match_submit(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    mode=c.data.split(":",1)[1]; data=await state.get_data(); await state.clear(); await c.answer("Задание принято")
+    try:
+        local_id,external=await matchlens.submit(MatchRequest("url",data["source_ref"],data["player_ref"],mode))
+    except Exception as exc:
+        log.exception("MatchLens submit failed"); return await c.message.answer(f"❌ Не удалось передать матч: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    if external:
+        text=f"✅ <b>Разбор #{local_id} запущен</b>\n\nИгрок: {html.escape(data['player_ref'])}\nПроверить: <code>/matchstatus {local_id}</code>"
+    else:
+        text=(f"🧱 <b>Задание #{local_id} сохранено</b>\n\nИгрок: {html.escape(data['player_ref'])}\n"
+              "Видеосервис MatchLens ещё не подключён — после его деплоя это задание можно будет отправить в обработку.\n\n"+confidence_legend())
+    await c.message.answer(text,parse_mode=ParseMode.HTML)
+
+@router.message(Command("matchstatus"))
+async def match_status(message:Message):
+    if not admin(message): return
+    parts=(message.text or "").split(maxsplit=1)
+    if len(parts)<2 or not parts[1].isdigit(): return await message.answer("Формат: <code>/matchstatus 1</code>",parse_mode=ParseMode.HTML)
+    try: row=await matchlens.refresh(int(parts[1]))
+    except Exception as exc: return await message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    result=f"\n<a href=\"{html.escape(row['result_url'])}\">Открыть готовый отчёт</a>" if row["result_url"] else ""
+    await message.answer(f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{result}",parse_mode=ParseMode.HTML,disable_web_page_preview=True)
 
 @router.message(Command("analytics"))
 async def analytics_report(message:Message):

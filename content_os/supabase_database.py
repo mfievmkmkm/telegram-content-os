@@ -83,3 +83,18 @@ class SupabaseDatabase:
             metric=latest.get(draft["id"])
             if metric: result.append({**draft,**{k:metric[k] for k in ("views","reactions","forwards","engagement")}})
         return sorted(result,key=lambda x:(x["engagement"],x["views"]),reverse=True)[:limit]
+
+    def save_match_job(self,source_type,source_ref,player_ref,analysis_mode):
+        now=datetime.now(self.timezone).isoformat()
+        rows=self.client.table("content_os_match_jobs").insert({"source_type":source_type,"source_ref":source_ref,
+          "player_ref":player_ref,"analysis_mode":analysis_mode,"created_at":now,"updated_at":now}).execute().data
+        return rows[0]["id"]
+
+    def update_match_job(self,job_id,**fields):
+        allowed={"external_id","status","progress","result_url","error"}; clean={k:v for k,v in fields.items() if k in allowed}
+        clean["updated_at"]=datetime.now(self.timezone).isoformat()
+        self.client.table("content_os_match_jobs").update(clean).eq("id",job_id).execute()
+
+    def match_job(self,job_id):
+        rows=self.client.table("content_os_match_jobs").select("*").eq("id",job_id).limit(1).execute().data
+        return rows[0] if rows else None

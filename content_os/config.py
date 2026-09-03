@@ -34,6 +34,9 @@ class Settings:
     telegram_api_hash: str
     telegram_session: str
     analytics_sync_minutes: int
+    matchlens_base_url: str
+    matchlens_api_key: str
+    matchlens_timeout_minutes: int
     channels: dict[str, str]
     schedules: dict[str, list[str]]
 
@@ -65,6 +68,9 @@ def load_settings() -> Settings:
         telegram_api_hash=os.getenv("TELEGRAM_API_HASH", "").strip(),
         telegram_session=os.getenv("TELEGRAM_SESSION_STRING", "").strip(),
         analytics_sync_minutes=max(15,int(os.getenv("ANALYTICS_SYNC_MINUTES", "60"))),
+        matchlens_base_url=os.getenv("MATCHLENS_BASE_URL", "").strip().rstrip("/"),
+        matchlens_api_key=os.getenv("MATCHLENS_API_KEY", "").strip(),
+        matchlens_timeout_minutes=max(10,int(os.getenv("MATCHLENS_TIMEOUT_MINUTES", "180"))),
         channels={"liga": os.getenv("LIGA_CHANNEL_ID", "@LigaProgress"),
                   "gifts": os.getenv("GIFTS_CHANNEL_ID", "@GiftsIntelligence")},
         schedules={"liga": csv("LIGA_DRAFT_TIMES", "09:00,15:00,20:00"),

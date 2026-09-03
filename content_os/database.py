@@ -36,6 +36,11 @@ class Database:
               id INTEGER PRIMARY KEY AUTOINCREMENT,draft_id INTEGER NOT NULL,views INTEGER NOT NULL DEFAULT 0,
               reactions INTEGER NOT NULL DEFAULT 0,forwards INTEGER NOT NULL DEFAULT 0,
               engagement REAL NOT NULL DEFAULT 0,captured_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS match_jobs(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,external_id TEXT,source_type TEXT NOT NULL,
+              source_ref TEXT NOT NULL,player_ref TEXT NOT NULL,analysis_mode TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'queued',progress INTEGER NOT NULL DEFAULT 0,
+              result_url TEXT,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
             """)
             columns={row[1] for row in db.execute("PRAGMA table_info(drafts)")}
             if "published_message_id" not in columns:
@@ -110,3 +115,19 @@ class Database:
             return db.execute("""SELECT d.id,d.channel_key,d.format_key,d.hook_score,d.text,m.views,m.reactions,m.forwards,m.engagement
               FROM drafts d JOIN post_metrics m ON m.id=(SELECT id FROM post_metrics WHERE draft_id=d.id ORDER BY captured_at DESC LIMIT 1)
               ORDER BY m.engagement DESC,m.views DESC LIMIT ?""",(limit,)).fetchall()
+
+    def save_match_job(self,source_type,source_ref,player_ref,analysis_mode):
+        now=datetime.now(self.timezone).isoformat()
+        with self.connect() as db:
+            cur=db.execute("INSERT INTO match_jobs(source_type,source_ref,player_ref,analysis_mode,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                           (source_type,source_ref,player_ref,analysis_mode,now,now))
+            return cur.lastrowid
+
+    def update_match_job(self,job_id,**fields):
+        allowed={"external_id","status","progress","result_url","error"}; clean={k:v for k,v in fields.items() if k in allowed}
+        clean["updated_at"]=datetime.now(self.timezone).isoformat()
+        with self.connect() as db:
+            db.execute(f"UPDATE match_jobs SET {','.join(f'{k}=?' for k in clean)} WHERE id=?",(*clean.values(),job_id))
+
+    def match_job(self,job_id):
+        with self.connect() as db: return db.execute("SELECT * FROM match_jobs WHERE id=?",(job_id,)).fetchone()
