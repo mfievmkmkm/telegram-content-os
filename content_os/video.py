@@ -7,9 +7,9 @@ import aiohttp
 from .channels import CHANNELS
 from .formatting import plain_text
 
-SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 30–42 секунды.
+SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 25–36 секунд.
 Первая фраза должна остановить скролл за 2 секунды: боль, конфликт, абсурд или опасное заблуждение.
-Никаких приветствий. Озвучка — 75–105 слов, разговорный русский, без пустых фраз.
+Никаких приветствий. Озвучка — 60–80 слов, разговорный русский, без пустых фраз.
 Каждые 2–5 секунд меняется визуальный акцент. Крупный экранный текст — максимум 6 слов.
 Для футбола не проси кадры защищённых трансляций: тренировка, поле, раздевалка, схемы, силуэты.
 Для Gifts используй интерфейсные макеты, подарки, графики, TON и тёмный неон; не выдумывай цены.
@@ -61,7 +61,14 @@ class VideoFactory:
             last_progress=-1
             while asyncio.get_running_loop().time()<deadline:
                 await asyncio.sleep(8)
-                status=self._data(await self._request_json(session,"GET",f"/api/v1/tasks/{task_id}"))
+                try:
+                    status=self._data(await self._request_json(session,"GET",f"/api/v1/tasks/{task_id}"))
+                except (aiohttp.ClientError,asyncio.TimeoutError,RuntimeError) as exc:
+                    if self.transient_status_error(exc):
+                        if progress and last_progress<5:
+                            await progress(5); last_progress=5
+                        await asyncio.sleep(12); continue
+                    raise
                 current=int(status.get("progress",0) or 0)
                 if progress and current!=last_progress:
                     await progress(current); last_progress=current
@@ -94,7 +101,7 @@ class VideoFactory:
             "video_subject":data["title"], "video_script":data["voiceover"],
             "video_terms":terms[:7], "video_aspect":"9:16", "video_source":"pexels",
             "video_concat_mode":"random", "video_transition_mode":"None", "video_clip_duration":4, "video_count":1,
-            "voice_name":self.settings.mpt_voice_name, "subtitle_enabled":True,
+            "voice_name":self.settings.mpt_voice_name, "voice_rate":1.08, "subtitle_enabled":True,
             "subtitle_position":"bottom", "video_language":"ru-RU",
             "bgm_type":"random", "bgm_volume":0.18, "voice_volume":1.0,
         }
@@ -108,6 +115,12 @@ class VideoFactory:
     @staticmethod
     def _data(response):
         return response.get("data",response) if isinstance(response,dict) else {}
+
+    @staticmethod
+    def transient_status_error(exc):
+        if isinstance(exc,(aiohttp.ClientError,asyncio.TimeoutError)): return True
+        text=str(exc).lower()
+        return any(marker in text for marker in ("http 502","http 503","http 504","failed to respond","connection reset"))
 
     @staticmethod
     def parse_json(raw):
@@ -131,7 +144,7 @@ class VideoFactory:
         text=plain_text(draft.get("text","")).strip()
         lines=[line.strip() for line in text.splitlines() if line.strip()]
         hook=(lines[0] if lines else "Остановись: здесь есть деталь, которую все пропускают")[:120]
-        words=text.split(); voiceover=" ".join(words[:105])
+        words=text.split(); voiceover=" ".join(words[:80])
         if len(voiceover.split())<35:
             voiceover=(voiceover+" Главное — не верить первому впечатлению. Посмотри на причину, проверь факты и только потом делай вывод.").strip()
         if draft.get("channel_key")=="gifts":
