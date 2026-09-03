@@ -132,3 +132,9 @@ class SupabaseDatabase:
         rows=self.client.table("content_os_service_orders").insert({"user_id":user_id,"username":username,
           "offer_key":offer_key,"brief":brief,"created_at":datetime.now(self.timezone).isoformat()}).execute().data
         return rows[0]["id"]
+
+    def service_orders(self,status="new",limit=30):
+        return self.client.table("content_os_service_orders").select("*").eq("status",status).order("id",desc=True).limit(limit).execute().data
+
+    def update_service_order(self,order_id,status):
+        self.client.table("content_os_service_orders").update({"status":status}).eq("id",order_id).execute()

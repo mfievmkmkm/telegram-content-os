@@ -79,7 +79,7 @@ def main_keyboard():
       [InlineKeyboardButton(text="⚽ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="🎁 Gifts Data",callback_data="panel:gifts")],
       [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players"),InlineKeyboardButton(text="🎬 Shorts",callback_data="panel:shorts")],
       [InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics"),InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
-      [InlineKeyboardButton(text="🛒 Магазин услуг",callback_data="panel:shop")],
+      [InlineKeyboardButton(text="🛒 Магазин услуг",callback_data="panel:shop"),InlineKeyboardButton(text="📥 Заявки",callback_data="panel:orders")],
       [InlineKeyboardButton(text="⚙️ Настройки и статус",callback_data="panel:system")]])
 
 def back_menu():
@@ -187,6 +187,31 @@ async def panel_generate(c:CallbackQuery,state:FSMContext):
 async def panel_shop(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     await state.clear(); await c.message.edit_text("🛒 <b>Магазин глазами клиента</b>",parse_mode=ParseMode.HTML,reply_markup=storefront()); await c.answer()
+
+@router.callback_query(F.data=="panel:orders")
+async def panel_orders(c:CallbackQuery):
+    if not admin(c): return
+    try: rows=db.service_orders()
+    except Exception: rows=[]
+    if not rows:
+        await c.answer(); return await c.message.edit_text("📥 Новых заявок пока нет",reply_markup=back_menu())
+    lines=["📥 <b>Новые заявки</b>"]; buttons=[]
+    for row in rows[:15]:
+        offer=OFFERS.get(row["offer_key"]); name=offer.title if offer else row["offer_key"]
+        contact=f"@{row['username']}" if row["username"] else ""
+        if not contact: contact=f"ID {row['user_id']}"
+        lines.append(f"\n<b>#{row['id']} · {html.escape(name)}</b>\n{html.escape(contact)}\n{html.escape(row['brief'][:240])}")
+        buttons.append([InlineKeyboardButton(text=f"✅ В работу #{row['id']}",callback_data=f"order:accept:{row['id']}"),InlineKeyboardButton(text="Закрыть",callback_data=f"order:close:{row['id']}")])
+    buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    await c.message.edit_text("\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
+
+@router.callback_query(F.data.startswith("order:"))
+async def order_status(c:CallbackQuery):
+    if not admin(c): return
+    _,action,raw_id=c.data.split(":",2)
+    if not raw_id.isdigit() or action not in {"accept","close"}: return await c.answer("Некорректная заявка",show_alert=True)
+    db.update_service_order(int(raw_id),"accepted" if action=="accept" else "closed")
+    await panel_orders(c)
 
 @router.callback_query(F.data=="panel:football")
 async def panel_football(c:CallbackQuery):

@@ -184,3 +184,10 @@ class Database:
             cur=db.execute("INSERT INTO service_orders(user_id,username,offer_key,brief,created_at) VALUES(?,?,?,?,?)",
                            (user_id,username,offer_key,brief,datetime.now(self.timezone).isoformat()))
             return cur.lastrowid
+
+    def service_orders(self,status="new",limit=30):
+        with self.connect() as db:
+            return db.execute("SELECT * FROM service_orders WHERE status=? ORDER BY id DESC LIMIT ?",(status,limit)).fetchall()
+
+    def update_service_order(self,order_id,status):
+        with self.connect() as db: db.execute("UPDATE service_orders SET status=? WHERE id=?",(status,order_id))
