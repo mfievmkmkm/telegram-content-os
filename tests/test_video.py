@@ -40,6 +40,14 @@ def test_mpt_payload_always_contains_broad_stock_queries():
     assert payload["video_terms"][0]=="football training"
     assert "soccer field" in payload["video_terms"]
     assert payload["video_concat_mode"]=="random"
+    assert payload["font_name"]=="DejaVuSans-Bold.ttf"
+    assert payload["subtitle_position"]=="custom"
+
+
+def test_voice_script_removes_pause_heavy_formatting():
+    result=VideoFactory.voice_script("Ты проиграл — и молчишь...\nЧто дальше?")
+    assert "—" not in result and "..." not in result and "\n" not in result
+    assert result == "Ты проиграл, и молчишь. Что дальше?"
 
 
 def test_missing_json_fields_fall_back_to_complete_brief():

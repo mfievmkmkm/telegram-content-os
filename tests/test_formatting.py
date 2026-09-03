@@ -21,7 +21,16 @@ def test_decorate_guarantees_emphasis_and_emojis():
     decorated=decorate_post(value,"liga")
     assert decorated.count("<b>")==1
     assert decorated.count("<i>")==1
-    assert "⚡" in decorated and "🧠" in decorated and "⚽" in decorated
+    assert "⚡" in decorated and "🔥" in decorated
+    assert "🧠" not in decorated and "⚽" not in decorated
+
+
+def test_decorate_limits_emoji_and_drops_final_period():
+    value="Хук. ⚽\n\nМысль 🔥.\n\nВывод 👀.\n\nЧто выберешь."
+    decorated=decorate_post(value,"liga")
+    assert decorated.count("⚡") + decorated.count("🔥") == 2
+    assert ". ⚡" not in decorated and "🔥." not in decorated
+    assert decorated.endswith("Что выберешь")
 
 def test_custom_emoji_is_rendered_with_safe_numeric_id():
     result=telegram_html("⚡ Хук",{"⚡":"5368324170671202286"})
