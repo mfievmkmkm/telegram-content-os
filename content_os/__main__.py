@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import BotCommand, BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .channels import CHANNELS, SERIES
@@ -69,6 +69,17 @@ def keyboard(draft_id):
       [InlineKeyboardButton(text="✂️ Короче",callback_data=f"short:{draft_id}"),InlineKeyboardButton(text="🎬 Shorts",callback_data=f"shorts:{draft_id}")],
       [InlineKeyboardButton(text="🗑 Удалить",callback_data=f"delete:{draft_id}")]])
 
+def main_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="✍️ Создать пост",callback_data="panel:generate"),InlineKeyboardButton(text="⏰ Очередь",callback_data="panel:scheduled")],
+      [InlineKeyboardButton(text="⚽ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="🎁 Gifts Data",callback_data="panel:gifts")],
+      [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players"),InlineKeyboardButton(text="🎬 Shorts",callback_data="panel:shorts")],
+      [InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics"),InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
+      [InlineKeyboardButton(text="⚙️ Настройки и статус",callback_data="panel:system")]])
+
+def back_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
+
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
     if chat:
@@ -98,7 +109,48 @@ async def publish(draft_id):
 @router.message(CommandStart())
 async def start(message:Message):
     if not admin(message): return await message.answer("Это закрытая редакция.")
-    db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS запущена</b>\n\n/generate — новый материал\n/giftpost — пост из рыночных данных\n/games — сегодняшние матчи и разбор\n/match — разобрать загруженное видео\n/matchstatus — состояние разбора\n/matchplayer — выбрать игрока на превью\n/playeradd — создать Player Passport\n/players — список футболистов\n/playerlink — добавить матч в паспорт\n/passport — статистика футболиста\n/emoji — сохранить премиум-эмодзи\n/sync — обновить историю каналов\n/analytics — эффективность постов\n/status — состояние",parse_mode=ParseMode.HTML)
+    db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS</b>\n\nВся редакция теперь управляется кнопками. Выбирай раздел:",parse_mode=ParseMode.HTML,reply_markup=main_keyboard())
+
+@router.message(Command("menu"))
+async def dashboard(message:Message,state:FSMContext):
+    if not admin(message): return
+    await state.clear(); await message.answer("🧠 <b>Главное меню</b>",parse_mode=ParseMode.HTML,reply_markup=main_keyboard())
+
+@router.callback_query(F.data=="panel:home")
+async def panel_home(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    await state.clear(); await c.message.edit_text("🧠 <b>Главное меню</b>",parse_mode=ParseMode.HTML,reply_markup=main_keyboard()); await c.answer()
+
+@router.callback_query(F.data=="panel:generate")
+async def panel_generate(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    await state.clear(); await c.message.edit_text("Куда бьём?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="⚽ Лига",callback_data="gen:liga"),InlineKeyboardButton(text="🎁 Gifts",callback_data="gen:gifts")],
+      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+
+@router.callback_query(F.data=="panel:football")
+async def panel_football(c:CallbackQuery):
+    if not admin(c): return
+    await c.message.edit_text("⚽ <b>Футбольная лаборатория</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="📡 Матчи сегодня",callback_data="panel:games"),InlineKeyboardButton(text="🎥 Разобрать видео",callback_data="panel:match")],
+      [InlineKeyboardButton(text="🔎 Статус разбора",callback_data="panel:matchhelp"),InlineKeyboardButton(text="🎯 Выбрать игрока",callback_data="panel:targethelp")],
+      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+
+@router.callback_query(F.data=="panel:players")
+async def panel_players(c:CallbackQuery):
+    if not admin(c): return
+    await c.message.edit_text("👤 <b>Player Passport</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="➕ Новый футболист",callback_data="panel:newplayer"),InlineKeyboardButton(text="📚 Все футболисты",callback_data="panel:playerlist")],
+      [InlineKeyboardButton(text="🔗 Привязать матч",callback_data="panel:linkhelp"),InlineKeyboardButton(text="📈 Открыть паспорт",callback_data="panel:passporthelp")],
+      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+
+@router.callback_query(F.data=="panel:system")
+async def panel_system(c:CallbackQuery):
+    if not admin(c): return
+    await c.message.edit_text("⚙️ <b>Система</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="🟢 Состояние",callback_data="panel:status"),InlineKeyboardButton(text="✨ Premium эмодзи",callback_data="panel:emojihelp")],
+      [InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync"),InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics")],
+      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.message(Command("playeradd"))
 async def player_add(message:Message):
@@ -483,6 +535,98 @@ async def status(message:Message):
     counts="\n".join(f"@{r['source_channel']} ({r['source_role']}): {r['count']}" for r in db.import_counts()) or "история ещё не загружена"
     await message.answer(f"AI: {'готов' if settings.llm_key else 'нет ключа'}\n⚽ {settings.channels['liga']}\n🎁 {settings.channels['gifts']}\n🎥 MatchLens: {'готов' if matchlens.ready else 'ждёт видеосервис'}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n🧬 MTProto: {'готов' if history.mtproto_ready else 'публичный режим'}\nАвтопубликация: {'да' if settings.auto_publish else 'нет'}\n\n<b>Память:</b>\n{counts}",parse_mode=ParseMode.HTML)
 
+@router.callback_query(F.data=="panel:games")
+async def panel_games(c:CallbackQuery):
+    if not admin(c): return
+    await c.answer("Сканирую матчи…"); wait=await c.message.answer("📡 Сканирую сегодняшние матчи…")
+    try: fixtures=await football.fixtures()
+    except Exception as exc: return await wait.edit_text(f"❌ Match Radar: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+    rows=fixtures_keyboard_rows(fixtures)
+    if not rows: return await wait.edit_text("Сегодня в выбранных турнирах матчей не найдено.",reply_markup=back_menu())
+    buttons=[[InlineKeyboardButton(text=label,callback_data=f"gamepost:{fixture_id}")] for label,fixture_id in rows]
+    buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    await wait.edit_text("⚽ <b>Какой матч вскрываем?</b>\n\nВозьму реальные события и статистику.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+@router.callback_query(F.data=="panel:match")
+async def panel_match(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    await state.clear(); await state.set_state(MatchState.waiting_source); await c.answer()
+    await c.message.answer("⚽ <b>MatchLens</b>\n\nПришли видео из Telegram, ссылку на YouTube или прямую ссылку на файл.",parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data=="panel:gifts")
+async def panel_gifts(c:CallbackQuery):
+    if not admin(c): return
+    await c.answer("Снимаю рынок…"); wait=await c.message.answer("🛰 Снимаю рынок: объёмы, greed, health и сигналы…")
+    try:
+        snapshot=await gifts_data.snapshot(); facts=gifts_data.editorial_facts(snapshot)
+        if facts:
+            draft_id=await editor.create_gifts_data_post(facts); await wait.edit_text(f"✅ Рыночный срез собран. Ошибок источников: {len(snapshot['errors'])}")
+        else:
+            draft_id=await editor.create("gifts"); await wait.edit_text("⚠️ Рыночные API недоступны: собрал честный Gifts-разбор без выдуманных цен.")
+        await review(draft_id)
+    except Exception as exc: log.exception("Gifts panel failed"); await wait.edit_text(f"❌ Data Desk: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+
+@router.callback_query(F.data=="panel:scheduled")
+async def panel_scheduled(c:CallbackQuery):
+    if not admin(c): return
+    rows=db.future_scheduled(datetime.now(settings.timezone).isoformat()); await c.answer()
+    if not rows: return await c.message.edit_text("Очередь пуста — запланированных публикаций нет.",reply_markup=back_menu())
+    lines=["⏰ <b>Очередь публикаций</b>"]; buttons=[]
+    for draft in rows:
+        when=datetime.fromisoformat(draft["scheduled_at"]).astimezone(settings.timezone)
+        lines.append(f"\n#{draft['id']} · {CHANNELS[draft['channel_key']]['emoji']} {when:%d.%m %H:%M} · {html.escape(draft['format_key'])}")
+        buttons.append([InlineKeyboardButton(text=f"❌ Отменить #{draft['id']} · {when:%d.%m %H:%M}",callback_data=f"unschedule:{draft['id']}")])
+    buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    await c.message.edit_text("".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+@router.callback_query(F.data=="panel:sync")
+async def panel_sync(c:CallbackQuery):
+    if not admin(c): return
+    await c.answer("Обновляю память…"); wait=await c.message.answer("🧬 Читаю последние посты…")
+    results=await history.sync_all(); lines=[]
+    for item in results:
+        detail=item.error if item.error else f"найдено {item.found}, новых {item.added}"
+        lines.append(f"{'❌' if item.error else '✅'} @{item.channel}: {detail}")
+    await wait.edit_text("<b>Память обновлена</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=back_menu())
+
+@router.callback_query(F.data=="panel:analytics")
+async def panel_analytics(c:CallbackQuery):
+    if not admin(c): return
+    await c.answer("Обновляю показатели…"); wait=await c.message.answer("📊 Обновляю просмотры, реакции и пересылки…")
+    result=await analytics.sync(); await wait.edit_text(f"{analytics.report()}\n\nОбновлено: {result['updated']} · Ошибок: {len(result['errors'])}",reply_markup=back_menu())
+
+@router.callback_query(F.data=="panel:status")
+async def panel_status(c:CallbackQuery):
+    if not admin(c): return
+    counts="\n".join(f"@{r['source_channel']}: {r['count']}" for r in db.import_counts()) or "история ещё не загружена"
+    text=(f"🟢 <b>Состояние системы</b>\n\nAI: {'готов' if settings.llm_key else 'нет ключа'}\n"
+          f"🎥 MatchLens: {'готов' if matchlens.ready else 'не подключён'}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n"
+          f"🧬 Полный Telegram-парсер: {'готов' if history.mtproto_ready else 'публичный режим'}\n🎬 Shorts: {'готов' if settings.mpt_base_url else 'не подключён'}\n"
+          f"Автопубликация: {'да' if settings.auto_publish else 'нет'}\n\n<b>Память:</b>\n{counts}")
+    await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
+
+@router.callback_query(F.data.in_({"panel:shorts","panel:matchhelp","panel:targethelp","panel:newplayer","panel:linkhelp","panel:passporthelp","panel:emojihelp"}))
+async def panel_help(c:CallbackQuery):
+    if not admin(c): return
+    help_text={
+      "panel:shorts":"🎬 <b>Shorts</b>\n\nСначала создай любой пост. Под готовым черновиком нажми <b>🎬 Shorts</b> — бот пришлёт MP4.",
+      "panel:matchhelp":"🔎 Проверить разбор:\n<code>/matchstatus ID</code>\n\nНапример: <code>/matchstatus 3</code>",
+      "panel:targethelp":"🎯 Выбрать игрока на превью:\n<code>/matchplayer ID_РАЗБОРА ID_ТРЕКА</code>",
+      "panel:newplayer":"➕ Создать футболиста:\n<code>/playeradd Имя | 2009 | правый вингер | правая</code>",
+      "panel:linkhelp":"🔗 Добавить готовый разбор в паспорт:\n<code>/playerlink ID_ИГРОКА ID_РАЗБОРА</code>",
+      "panel:passporthelp":"📈 Открыть статистику:\n<code>/passport ID_ИГРОКА</code>",
+      "panel:emojihelp":"✨ Пришли Premium-эмодзи вместе с командой:\n<code>/emoji liga ⚡</code> или <code>/emoji gifts 💎</code>",
+    }
+    await c.message.answer(help_text[c.data],parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
+
+@router.callback_query(F.data=="panel:playerlist")
+async def panel_player_list(c:CallbackQuery):
+    if not admin(c): return
+    rows=db.players(); await c.answer()
+    if not rows: return await c.message.answer("Профилей пока нет.",reply_markup=back_menu())
+    lines=[f"#{row['id']} · <b>{html.escape(row['display_name'])}</b> · {html.escape(row['position'] or 'позиция не указана')}" for row in rows[:30]]
+    await c.message.answer("👤 <b>Player Passports</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=back_menu())
+
 async def due():
     for draft in db.scheduled(datetime.now(settings.timezone).isoformat()):
         try: await publish(draft["id"])
@@ -490,6 +634,9 @@ async def due():
 
 async def main():
     db.init(); scheduler=AsyncIOScheduler(timezone=settings.timezone)
+    await bot.set_my_commands([BotCommand(command="menu",description="открыть панель управления"),BotCommand(command="generate",description="создать пост"),
+      BotCommand(command="scheduled",description="очередь публикаций"),BotCommand(command="games",description="матчи сегодня"),
+      BotCommand(command="match",description="разобрать видео"),BotCommand(command="status",description="состояние системы")])
     for channel,times in settings.schedules.items():
         for i,value in enumerate(times):
             hour,minute=map(int,value.split(":")); scheduler.add_job(generate,"cron",args=[channel],hour=hour,minute=minute,id=f"{channel}_{i}")
