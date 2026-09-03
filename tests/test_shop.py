@@ -7,6 +7,6 @@ def test_catalog_has_three_real_directions():
 
 
 def test_storefront_and_offer_have_action_buttons():
-    assert len(storefront().inline_keyboard) == 3
+    assert len(storefront().inline_keyboard) == 4
     assert category_keyboard("liga").inline_keyboard[0][0].callback_data.startswith("shop:offer:")
     assert offer_keyboard("gifts_audit").inline_keyboard[0][0].callback_data == "shop:order:gifts_audit"
