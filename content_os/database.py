@@ -192,6 +192,9 @@ class Database:
         with self.connect() as db:
             return db.execute("SELECT * FROM service_orders WHERE status=? ORDER BY id DESC LIMIT ?",(status,limit)).fetchall()
 
+    def service_order(self,order_id):
+        with self.connect() as db: return db.execute("SELECT * FROM service_orders WHERE id=?",(order_id,)).fetchone()
+
     def update_service_order(self,order_id,status):
         with self.connect() as db: db.execute("UPDATE service_orders SET status=? WHERE id=?",(status,order_id))
 

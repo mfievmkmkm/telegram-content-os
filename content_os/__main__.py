@@ -225,6 +225,7 @@ async def panel_orders(c:CallbackQuery):
         if not contact: contact=f"ID {row['user_id']}"
         lines.append(f"\n<b>#{row['id']} · {html.escape(name)}</b>\n{html.escape(contact)}\n{html.escape(row['brief'][:240])}")
         buttons.append([InlineKeyboardButton(text=f"✅ В работу #{row['id']}",callback_data=f"order:accept:{row['id']}"),InlineKeyboardButton(text="Закрыть",callback_data=f"order:close:{row['id']}")])
+        buttons.append([InlineKeyboardButton(text=f"💬 Написать клиенту #{row['id']}",url=f"tg://user?id={row['user_id']}")])
     buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
     await c.message.edit_text("\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
 
@@ -233,7 +234,12 @@ async def order_status(c:CallbackQuery):
     if not admin(c): return
     _,action,raw_id=c.data.split(":",2)
     if not raw_id.isdigit() or action not in {"accept","close"}: return await c.answer("Некорректная заявка",show_alert=True)
-    db.update_service_order(int(raw_id),"accepted" if action=="accept" else "closed")
+    order=db.service_order(int(raw_id)); status="accepted" if action=="accept" else "closed"; db.update_service_order(int(raw_id),status)
+    if order:
+        text=(f"✅ <b>Заявка #{raw_id} взята в работу</b>\n\nСкоро напишем с уточнениями и точной стоимостью"
+              if action=="accept" else f"🏁 <b>Заявка #{raw_id} закрыта</b>\n\nЕсли понадобится новый разбор — витрина всегда доступна через /shop")
+        try: await bot.send_message(int(order["user_id"]),text,parse_mode=ParseMode.HTML)
+        except Exception: log.info("Could not notify customer for order %s",raw_id)
     await panel_orders(c)
 
 @router.callback_query(F.data=="panel:football")

@@ -136,6 +136,10 @@ class SupabaseDatabase:
     def service_orders(self,status="new",limit=30):
         return self.client.table("content_os_service_orders").select("*").eq("status",status).order("id",desc=True).limit(limit).execute().data
 
+    def service_order(self,order_id):
+        rows=self.client.table("content_os_service_orders").select("*").eq("id",order_id).limit(1).execute().data
+        return rows[0] if rows else None
+
     def update_service_order(self,order_id,status):
         self.client.table("content_os_service_orders").update({"status":status}).eq("id",order_id).execute()
 
