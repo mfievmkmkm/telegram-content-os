@@ -7,7 +7,7 @@ import aiohttp
 from .channels import CHANNELS, POST_RULES
 from .hooks import score_hook
 from .sources import collect_items
-from .formatting import clean_generated_post, plain_text
+from .formatting import clean_generated_post, decorate_post, plain_text
 
 
 class Editor:
@@ -52,6 +52,7 @@ class Editor:
                 f"Хук получил {score}/5. Проблемы: {', '.join(reasons)}. Перепиши весь пост, начни намного сильнее.\n\n{text}",.95)
             text = clean_generated_post(text)
             score, _ = score_hook(plain_text(text))
+        text=decorate_post(text,channel_key)
         digest = hashlib.sha256(material["url"].encode()).hexdigest() if material["url"] else None
         return self.db.save_draft(channel_key,format_key,text,score,material["title"],material["url"],digest)
 
@@ -61,6 +62,7 @@ class Editor:
                       "short":"Сократи до 500–700 знаков, оставь ударные мысли."}
         text=clean_generated_post(await self.llm(CHANNELS[draft["channel_key"]]["voice"]+POST_RULES,
                             f"{instructions[mode]} Верни только пост.\n\n{draft['text']}"))
+        text=decorate_post(text,draft["channel_key"])
         return text, score_hook(plain_text(text))[0]
 
     async def create_gifts_data_post(self,facts):
@@ -71,4 +73,5 @@ class Editor:
         if score<3:
             text=await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,f"Перепиши с более сильным хуком. Данные не меняй.\n{text}",.9)
             text=clean_generated_post(text); score,_=score_hook(plain_text(text))
+        text=decorate_post(text,"gifts")
         return self.db.save_draft("gifts","data_desk",text,score,"Gifts Data Desk","",None)
