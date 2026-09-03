@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 import aiohttp
 
 from .channels import CHANNELS
+from .formatting import plain_text
 
 SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 30–42 секунды.
 Первая фраза должна остановить скролл за 2 секунды: боль, конфликт, абсурд или опасное заблуждение.
@@ -24,14 +25,18 @@ class VideoFactory:
         raw=await self.editor.llm(CHANNELS[draft["channel_key"]]["voice"],f"{SHORTS_RULES}\n\nПОСТ:\n{draft['text']}",.95)
         try:
             data=self.parse_json(raw)
-        except (json.JSONDecodeError,ValueError):
-            repaired=await self.editor.llm(
-                "Ты JSON-валидатор. Исправь синтаксис и верни только один JSON-объект без markdown.",
-                raw,
-                .1,
-            )
-            data=self.parse_json(repaired)
-        self.validate(data)
+            self.validate(data)
+        except (json.JSONDecodeError,ValueError,TypeError):
+            try:
+                repaired=await self.editor.llm(
+                    "Ты JSON-валидатор. Заполни ВСЕ обязательные поля title, hook, voiceover, scenes, caption, music_mood, cta. "
+                    "scenes — массив из 5–10 объектов seconds, visual, screen_text. Верни только JSON без markdown.",
+                    f"{SHORTS_RULES}\n\nИСХОДНЫЙ ОТВЕТ:\n{raw}\n\nПОСТ:\n{draft['text']}",
+                    .1,
+                )
+                data=self.parse_json(repaired); self.validate(data)
+            except (json.JSONDecodeError,ValueError,TypeError):
+                data=self.fallback(draft)
         data.update({"draft_id":draft["id"],"channel":draft["channel_key"],"aspect_ratio":"9:16","language":"ru"})
         payload=json.dumps(data,ensure_ascii=False,indent=2); job_id=self.db.save_video_job(draft["id"],payload)
         delivered=False
@@ -104,3 +109,22 @@ class VideoFactory:
         if not isinstance(data["scenes"],list) or not 5<=len(data["scenes"])<=10: raise ValueError("Shorts должен содержать 5–10 сцен")
         duration=sum(int(scene.get("seconds",0)) for scene in data["scenes"])
         if not 25<=duration<=48: raise ValueError(f"Некорректная длительность: {duration} сек")
+
+    @staticmethod
+    def fallback(draft):
+        """Deterministic production brief when an LLM ignores the JSON contract."""
+        text=plain_text(draft.get("text","")).strip()
+        lines=[line.strip() for line in text.splitlines() if line.strip()]
+        hook=(lines[0] if lines else "Остановись: здесь есть деталь, которую все пропускают")[:120]
+        words=text.split(); voiceover=" ".join(words[:105])
+        if len(voiceover.split())<35:
+            voiceover=(voiceover+" Главное — не верить первому впечатлению. Посмотри на причину, проверь факты и только потом делай вывод.").strip()
+        if draft.get("channel_key")=="gifts":
+            visuals=["telegram gift dark neon","digital collectible close up","crypto market chart dark","phone marketplace scrolling","ton coin animation","collector decision concept","dark neon question mark"]
+            mood="dark electronic tension"
+        else:
+            visuals=["football player training alone","football boots close up","soccer tactical board","player sprint training","empty stadium tunnel","coach observing practice","football field sunset"]
+            mood="energetic sports tension"
+        scenes=[{"seconds":5,"visual":visual,"screen_text":([hook,"Смотри глубже","Вот где ошибка","Решает деталь","Без оправданий","Проверь себя","А ты согласен?"][i])[:45]} for i,visual in enumerate(visuals)]
+        return {"title":hook[:70],"hook":hook,"voiceover":voiceover,"scenes":scenes,
+                "caption":text[:900],"music_mood":mood,"cta":lines[-1][:120] if lines else "А ты согласен?"}
