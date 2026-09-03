@@ -1,4 +1,6 @@
 import pytest
+import asyncio
+from types import SimpleNamespace
 
 from content_os.video import VideoFactory
 
@@ -23,3 +25,17 @@ def test_json_can_be_extracted_from_model_chatter():
 
 def test_mpt_nested_response_is_unwrapped():
     assert VideoFactory._data({"status":200,"data":{"task_id":"abc"}})["task_id"]=="abc"
+
+
+def test_missing_json_fields_fall_back_to_complete_brief():
+    class EmptyEditor:
+        async def llm(self,*args,**kwargs): return "{}"
+    class MemoryDb:
+        def save_video_job(self,draft_id,payload):
+            self.payload=payload; return 7
+    db=MemoryDb(); factory=VideoFactory(SimpleNamespace(mpt_webhook_url=""),db,EmptyEditor())
+    job,data,_,_=asyncio.run(factory.create({"id":3,"channel_key":"liga","text":"<b>Ты проиграл эпизод ещё до приёма мяча.</b>\n\nСканируй поле до передачи.\n\nА ты смотришь через плечо?"}))
+    assert job==7
+    VideoFactory.validate(data)
+    assert len(data["scenes"])==7
+    assert data["hook"].startswith("Ты проиграл")
