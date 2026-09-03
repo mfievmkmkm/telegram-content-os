@@ -15,6 +15,8 @@ class Settings:
     llm_url: str
     llm_model: str
     database_path: str
+    supabase_url: str
+    supabase_key: str
     timezone: ZoneInfo
     auto_publish: bool
     mpt_webhook_url: str
@@ -40,6 +42,8 @@ def load_settings() -> Settings:
         llm_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/"),
         llm_model=os.getenv("LLM_MODEL", "gemini-2.5-flash-lite"),
         database_path=os.getenv("DATABASE_PATH", "/data/content_os.db"),
+        supabase_url=os.getenv("SUPABASE_URL", "").rstrip("/"),
+        supabase_key=os.getenv("SUPABASE_KEY", "").strip(),
         timezone=ZoneInfo(os.getenv("TIMEZONE", "Asia/Yekaterinburg")),
         auto_publish=os.getenv("AUTO_PUBLISH", "false").lower() in {"1", "true", "yes"},
         mpt_webhook_url=os.getenv("MPT_WEBHOOK_URL", "").strip(),
