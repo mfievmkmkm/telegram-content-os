@@ -37,6 +37,10 @@ class Settings:
     matchlens_base_url: str
     matchlens_api_key: str
     matchlens_timeout_minutes: int
+    matchlens_upload_max_mb: int
+    api_football_key: str
+    api_football_url: str
+    football_leagues: list[str]
     channels: dict[str, str]
     schedules: dict[str, list[str]]
 
@@ -71,6 +75,10 @@ def load_settings() -> Settings:
         matchlens_base_url=os.getenv("MATCHLENS_BASE_URL", "").strip().rstrip("/"),
         matchlens_api_key=os.getenv("MATCHLENS_API_KEY", "").strip(),
         matchlens_timeout_minutes=max(10,int(os.getenv("MATCHLENS_TIMEOUT_MINUTES", "180"))),
+        matchlens_upload_max_mb=max(5,int(os.getenv("MATCHLENS_UPLOAD_MAX_MB", "100"))),
+        api_football_key=os.getenv("API_FOOTBALL_KEY", "").strip(),
+        api_football_url=os.getenv("API_FOOTBALL_URL", "https://v3.football.api-sports.io").strip().rstrip("/"),
+        football_leagues=csv("FOOTBALL_LEAGUES", "39,140,135,78,61,2,3"),
         channels={"liga": os.getenv("LIGA_CHANNEL_ID", "@LigaProgress"),
                   "gifts": os.getenv("GIFTS_CHANNEL_ID", "@GiftsIntelligence")},
         schedules={"liga": csv("LIGA_DRAFT_TIMES", "09:00,15:00,20:00"),

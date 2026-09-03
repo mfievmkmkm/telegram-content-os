@@ -43,6 +43,9 @@ class SupabaseDatabase:
     def scheduled(self,now):
         return self.client.table("content_os_drafts").select("*").eq("status","scheduled").lte("scheduled_at",now).execute().data
 
+    def future_scheduled(self,now,limit=30):
+        return self.client.table("content_os_drafts").select("*").eq("status","scheduled").gt("scheduled_at",now).order("scheduled_at").limit(limit).execute().data
+
     def published_for_metrics(self,limit=100):
         return self.client.table("content_os_drafts").select("*").eq("status","published").not_.is_("published_message_id","null").order("published_at",desc=True).limit(limit).execute().data
 
@@ -50,9 +53,11 @@ class SupabaseDatabase:
         rows=self.client.table("content_os_video_jobs").insert({"draft_id":draft_id,"payload":payload,"created_at":datetime.now(self.timezone).isoformat()}).execute().data
         return rows[0]["id"]
 
-    def save_channel_post(self,channel_key,source_channel,source_role,post_id,text,views=None,posted_at=None):
+    def save_channel_post(self,channel_key,source_channel,source_role,post_id,text,views=None,posted_at=None,
+                          reactions=0,forwards=0,media_kind=None,media_ref=None):
         payload={"channel_key":channel_key,"source_channel":source_channel,"source_role":source_role,
-                 "telegram_post_id":post_id,"text":text,"views":views,"posted_at":posted_at,"imported_at":datetime.now(self.timezone).isoformat()}
+                 "telegram_post_id":post_id,"text":text,"views":views,"reactions":reactions,"forwards":forwards,
+                 "media_kind":media_kind,"media_ref":media_ref,"posted_at":posted_at,"imported_at":datetime.now(self.timezone).isoformat()}
         existing=self.client.table("content_os_channel_posts").select("id").eq("source_channel",source_channel).eq("telegram_post_id",post_id).limit(1).execute().data
         if existing: return False
         self.client.table("content_os_channel_posts").insert(payload).execute(); return True
@@ -84,6 +89,12 @@ class SupabaseDatabase:
             if metric: result.append({**draft,**{k:metric[k] for k in ("views","reactions","forwards","engagement")}})
         return sorted(result,key=lambda x:(x["engagement"],x["views"]),reverse=True)[:limit]
 
+    def editorial_insights(self,channel_key):
+        rows=[row for row in self.analytics_summary(500) if row["channel_key"]==channel_key]; grouped={}
+        for row in rows: grouped.setdefault(row["format_key"],[]).append(float(row["engagement"]))
+        result=[{"format_key":key,"avg_er":sum(values)/len(values),"samples":len(values)} for key,values in grouped.items() if len(values)>=2]
+        return sorted(result,key=lambda x:x["avg_er"],reverse=True)[:3]
+
     def save_match_job(self,source_type,source_ref,player_ref,analysis_mode):
         now=datetime.now(self.timezone).isoformat()
         rows=self.client.table("content_os_match_jobs").insert({"source_type":source_type,"source_ref":source_ref,
@@ -91,10 +102,28 @@ class SupabaseDatabase:
         return rows[0]["id"]
 
     def update_match_job(self,job_id,**fields):
-        allowed={"external_id","status","progress","result_url","error"}; clean={k:v for k,v in fields.items() if k in allowed}
+        allowed={"external_id","status","progress","result_url","error","metrics_json"}; clean={k:v for k,v in fields.items() if k in allowed}
         clean["updated_at"]=datetime.now(self.timezone).isoformat()
         self.client.table("content_os_match_jobs").update(clean).eq("id",job_id).execute()
 
     def match_job(self,job_id):
         rows=self.client.table("content_os_match_jobs").select("*").eq("id",job_id).limit(1).execute().data
         return rows[0] if rows else None
+
+    def save_player(self,display_name,birth_year=None,position="",strong_foot=""):
+        rows=self.client.table("content_os_players").insert({"display_name":display_name,"birth_year":birth_year,
+          "position":position,"strong_foot":strong_foot,"created_at":datetime.now(self.timezone).isoformat()}).execute().data
+        return rows[0]["id"]
+
+    def players(self): return self.client.table("content_os_players").select("*").order("id",desc=True).execute().data
+
+    def link_player_match(self,player_id,match_job_id):
+        self.client.table("content_os_player_matches").upsert({"player_id":player_id,"match_job_id":match_job_id,
+          "created_at":datetime.now(self.timezone).isoformat()},on_conflict="player_id,match_job_id").execute()
+
+    def player_report(self,player_id):
+        players=self.client.table("content_os_players").select("*").eq("id",player_id).limit(1).execute().data
+        links=self.client.table("content_os_player_matches").select("match_job_id").eq("player_id",player_id).execute().data
+        ids=[row["match_job_id"] for row in links]
+        matches=self.client.table("content_os_match_jobs").select("*").in_("id",ids).order("created_at").execute().data if ids else []
+        return (players[0] if players else None),matches

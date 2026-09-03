@@ -19,7 +19,7 @@ def clean_generated_post(value: str) -> str:
     return text
 
 
-def telegram_html(value: str) -> str:
+def telegram_html(value: str,custom_emojis:dict[str,str]|None=None) -> str:
     """Render a small, safe subset of model formatting as Telegram HTML."""
     text = clean_generated_post(value)
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text, flags=re.DOTALL)
@@ -32,6 +32,8 @@ def telegram_html(value: str) -> str:
             escaped,
             flags=re.IGNORECASE,
         )
+    for fallback,emoji_id in (custom_emojis or {}).items():
+        if emoji_id.isdigit(): escaped=escaped.replace(fallback,f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>')
     return escaped
 
 

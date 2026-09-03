@@ -44,7 +44,10 @@ class Editor:
                 first=next((line.strip() for line in row["text"].splitlines() if line.strip()),"")
                 if first: radar.append(first[:180])
         trends=("\n\nЧУЖОЙ РАДАР ТЕМ — используй только как сигнал интереса. Не копируй формулировки и выводы:\n- "+"\n- ".join(radar)) if radar else ""
-        prompt = f"Рубрика: {format_key}. Создай оригинальный пост.\n{facts}{style}{trends}"
+        insights=self.db.editorial_insights(channel_key)
+        learned=("\n\nНАША СТАТИСТИКА: лучше всего работают "+", ".join(f"{x['format_key']} (ER {x['avg_er']:.2f}%, {x['samples']} пост.)" for x in insights)+
+                 ". Это ориентир для ритма и угла, но не повод повторять тему.") if insights else ""
+        prompt = f"Рубрика: {format_key}. Создай оригинальный пост.\n{facts}{style}{trends}{learned}"
         text = clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt))
         score, reasons = score_hook(plain_text(text))
         if score < 3:
@@ -75,3 +78,25 @@ class Editor:
             text=clean_generated_post(text); score,_=score_hook(plain_text(text))
         text=decorate_post(text,"gifts")
         return self.db.save_draft("gifts","data_desk",text,score,"Gifts Data Desk","",None)
+
+    async def create_match_data_post(self,facts):
+        prompt=("Создай оригинальный пост-разбор матча только по данным ниже. Не перечисляй всю статистику: "
+                "найди один конфликт или показатель, который меняет понимание игры. Разделяй факт и своё объяснение. "
+                "Не придумывай xG, цитаты и действия игроков, которых нет в данных.\n\nДАННЫЕ:\n"+facts)
+        text=clean_generated_post(await self.llm(CHANNELS["liga"]["voice"]+POST_RULES,prompt,.78)); score,_=score_hook(plain_text(text))
+        if score<3:
+            text=clean_generated_post(await self.llm(CHANNELS["liga"]["voice"]+POST_RULES,f"Усиль первую строку, не меняя факты.\n{text}",.88)); score,_=score_hook(plain_text(text))
+        text=decorate_post(text,"liga")
+        return self.db.save_draft("liga","match_radar",text,score,"Match Radar","",None)
+
+    async def create_from_brief(self,channel_key,format_key,brief,title="Своя тема",url=""):
+        cfg=CHANNELS[channel_key]; examples=[row["text"][:1000] for row in self.db.style_examples(channel_key)]
+        style=("\n\nНАШ РИТМ — не копируй фразы:\n---\n"+"\n---\n".join(examples)) if examples else ""
+        prompt=(f"Рубрика: {format_key}. Создай оригинальный пост по редакторскому заданию. "
+                "Если в задании мало фактов, не додумывай цифры и цитаты: сделай мнение, практический разбор или вопрос.\n\n"
+                f"ЗАДАНИЕ:\n{brief[:8000]}{style}")
+        text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.88)); score,reasons=score_hook(plain_text(text))
+        if score<3:
+            text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,f"Усиль хук. Проблемы: {', '.join(reasons)}. Факты не меняй.\n\n{text}",.95)); score,_=score_hook(plain_text(text))
+        text=decorate_post(text,channel_key); digest=hashlib.sha256(url.encode()).hexdigest() if url else None
+        return self.db.save_draft(channel_key,format_key,text,score,title,url,digest)
