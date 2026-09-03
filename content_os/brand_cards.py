@@ -27,9 +27,16 @@ def gift_card(post_text,format_key=" intelligence"):
     draw.text((86,150),format_key.replace("_"," ").upper()[:32],font=font(22),fill=(140,150,160))
     lines=[x.strip() for x in plain_text(post_text).splitlines() if x.strip()]
     hook=re.sub(r"^[^\wА-Яа-я]+\s*","",lines[0] if lines else "РЫНОК БЕЗ ГРИМА")
-    wrapped=textwrap.wrap(hook,width=20,break_long_words=False)[:5]; y=290
+    wrapped=textwrap.wrap(hook,width=20,break_long_words=False)[:4]; y=286
     for line in wrapped:
         draw.text((86,y),line,font=font(68),fill=(244,247,249)); y+=86
+    detail=" ".join(lines[1:3]) if len(lines)>1 else "Сигнал, который рынок обычно замечает слишком поздно"
+    detail=textwrap.shorten(detail,width=150,placeholder="…")
+    detail_lines=textwrap.wrap(detail,width=48,break_long_words=False)[:4]
+    y=max(y+28,640)
+    draw.line((86,y-24,994,y-24),fill=accent,width=3)
+    for line in detail_lines:
+        draw.text((86,y),line,font=font(30,False),fill=(194,202,210)); y+=45
     draw.rounded_rectangle((86,870,580,944),radius=30,fill=accent)
     draw.text((118,887),"СМОТРИ ГЛУБЖЕ FLOOR",font=font(25),fill=(7,9,12))
     draw.text((86,980),"GI  •  MARKET SIGNALS WITHOUT FAIRYTALES",font=font(20),fill=(130,140,150))
