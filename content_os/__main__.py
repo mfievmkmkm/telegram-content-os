@@ -97,7 +97,13 @@ async def review(draft_id):
 
 async def generate(channel_key):
     try:
-        draft_id=await editor.create(channel_key)
+        draft_id=None
+        if channel_key=="gifts":
+            counter=int(db.get("gifts_generation_counter") or 0)+1; db.set("gifts_generation_counter",str(counter))
+            if counter%2==0:
+                snapshot=await gifts_data.snapshot(); facts=gifts_data.editorial_facts(snapshot)
+                if facts: draft_id=await editor.create_gifts_data_post(facts)
+        if draft_id is None: draft_id=await editor.create(channel_key)
         if settings.auto_publish: await publish(draft_id)
         else: await review(draft_id)
     except Exception: log.exception("Generation failed for %s",channel_key)
@@ -108,12 +114,20 @@ async def publish(draft_id):
     if image:
         try: await bot.send_photo(channel,image)
         except Exception: log.info("Source image unavailable during publish: %s",image)
-    sent=await bot.send_message(channel,render(draft["channel_key"],draft["text"]),parse_mode=ParseMode.HTML,disable_web_page_preview=True)
+    sales_markup=None
+    if settings.shop_cta_every and int(draft_id)%settings.shop_cta_every==0:
+        me=await bot.get_me(); slug="service_liga" if draft["channel_key"]=="liga" else "service_gifts"
+        label="Разобрать мой матч" if draft["channel_key"]=="liga" else "Вскрыть мой Gift"
+        sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=f"https://t.me/{me.username}?start={slug}")]])
+    sent=await bot.send_message(channel,render(draft["channel_key"],draft["text"]),parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup)
     db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=sent.message_id)
 
 @router.message(CommandStart())
 async def start(message:Message):
     if not admin(message):
+        payload=(message.text or "").partition(" ")[2].strip()
+        if payload=="service_liga": return await message.answer("<b>Хочешь понять, что ты реально сделал в эпизоде?</b>\n\nВыбери формат разбора",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("liga"))
+        if payload=="service_gifts": return await message.answer("<b>Красивый Gift ещё не значит ликвидный</b>\n\nВыбери, что вскрываем",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("gifts"))
         return await message.answer("<b>Здесь не продают воздух</b>\n\nВыбери, где сейчас болит сильнее — футбол, Gifts или собственный Telegram-канал",parse_mode=ParseMode.HTML,reply_markup=storefront())
     db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS</b>\n\nВся редакция теперь управляется кнопками. Выбирай раздел:",parse_mode=ParseMode.HTML,reply_markup=main_keyboard())
 

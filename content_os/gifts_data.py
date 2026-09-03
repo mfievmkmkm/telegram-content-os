@@ -22,7 +22,7 @@ class GiftsDataDesk:
             return json.loads(body)
 
     async def snapshot(self):
-        result={"gift_asset":{},"own_signals":[],"errors":[]}
+        result={"gift_asset":{},"telegram_catalog":[],"own_signals":[],"errors":[]}
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=35)) as session:
             headers={}
             if self.settings.gift_asset_key: headers[self.settings.gift_asset_header]=self.settings.gift_asset_key
@@ -30,6 +30,14 @@ class GiftsDataDesk:
             for name,task in calls.items():
                 try: result["gift_asset"][name]=await task
                 except Exception as exc: result["errors"].append(f"Gift Asset {name}: {str(exc)[:120]}")
+            # Official Bot API fallback: supply-side facts remain available even when
+            # third-party market aggregators are temporarily down.
+            try:
+                catalog=await self._json(session,f"https://api.telegram.org/bot{self.settings.bot_token}/getAvailableGifts")
+                if catalog.get("ok") and isinstance(catalog.get("result",{}).get("gifts"),list):
+                    result["telegram_catalog"]=catalog["result"]["gifts"]
+            except Exception as exc:
+                result["errors"].append(f"Telegram catalog: {type(exc).__name__}")
             if self.settings.gifts_supabase_url and self.settings.gifts_supabase_key and self.settings.gifts_signals_path:
                 headers={"apikey":self.settings.gifts_supabase_key,"Authorization":f"Bearer {self.settings.gifts_supabase_key}"}
                 url=f"{self.settings.gifts_supabase_url}/rest/v1/{self.settings.gifts_signals_path}"
@@ -75,4 +83,19 @@ class GiftsDataDesk:
             if leaders: facts.append("Продажи за последний час: "+", ".join(f"{c} — {n:g} ({p})" for n,c,p in leaders[:8]))
         signals=snapshot.get("own_signals",[])
         if isinstance(signals,list) and signals: facts.append("Последние собственные сигналы JSON: "+json.dumps(signals[:8],ensure_ascii=False,default=str)[:5000])
+        catalog=snapshot.get("telegram_catalog",[])
+        if isinstance(catalog,list) and catalog:
+            limited=[]; premium=0
+            for gift in catalog:
+                if not isinstance(gift,dict): continue
+                if gift.get("is_premium"): premium+=1
+                total,remaining=gift.get("total_count"),gift.get("remaining_count")
+                if isinstance(total,int) and total>0 and isinstance(remaining,int):
+                    limited.append((remaining/total,gift.get("id","без ID"),gift.get("star_count"),remaining,total,gift.get("unique_gift_variant_count")))
+            facts.append(f"Официальный каталог Telegram: {len(catalog)} подарков, Premium-only: {premium}")
+            if limited:
+                limited.sort()
+                facts.append("Минимальные остатки лимитированных подарков: "+", ".join(
+                    f"{gift_id}: осталось {remaining}/{total} ({ratio*100:.1f}%), цена {stars} Stars, вариантов {variants or '—'}"
+                    for ratio,gift_id,stars,remaining,total,variants in limited[:6]))
         return "\n".join(facts)
