@@ -24,6 +24,10 @@ AI-редакция для `@LigaProgress` и `@GiftsIntelligence`: ищет т�
 Команды: `/generate`, `/scheduled`, `/giftpost`, `/games`, `/match`, `/matchstatus`, `/matchplayer`, `/playeradd`,
 `/players`, `/playerlink`, `/passport`, `/emoji`, `/sync`, `/analytics`, `/status`.
 
+`/start` и `/menu` открывают панель управления со всеми функциями. Из неё доступны редакция,
+очередь, Match Radar, MatchLens, Gifts Data Desk, Player Passport, Shorts, аналитика, память,
+Premium-эмодзи и диагностика подключений. Telegram также показывает основные команды в системном меню бота.
+
 Player Passport создаётся командой `/playeradd Имя | год | позиция | ведущая нога`. После готового
 разбора `/playerlink ID_ИГРОКА ID_РАЗБОРА` добавляет его в профиль, а `/passport ID_ИГРОКА`
 собирает накопленные наблюдаемые показатели. Оценочная дистанция всегда подписана знаком `≈`.
