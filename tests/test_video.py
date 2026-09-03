@@ -27,6 +27,15 @@ def test_mpt_nested_response_is_unwrapped():
     assert VideoFactory._data({"status":200,"data":{"task_id":"abc"}})["task_id"]=="abc"
 
 
+def test_mpt_payload_always_contains_broad_stock_queries():
+    factory=VideoFactory(SimpleNamespace(mpt_voice_name="ru-RU-DmitryNeural"),None,None)
+    data=valid_payload(); data["channel"]="liga"
+    payload=factory.mpt_payload(data)
+    assert payload["video_terms"][0]=="football training"
+    assert "soccer field" in payload["video_terms"]
+    assert payload["video_concat_mode"]=="random"
+
+
 def test_missing_json_fields_fall_back_to_complete_brief():
     class EmptyEditor:
         async def llm(self,*args,**kwargs): return "{}"
