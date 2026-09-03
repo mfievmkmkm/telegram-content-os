@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from urllib.parse import urljoin
 
 import aiohttp
@@ -100,13 +101,28 @@ class VideoFactory:
         for term in broad.get(data.get("channel"),broad["liga"])+suggested[:2]:
             if term and term.lower() not in {item.lower() for item in terms}: terms.append(term)
         return {
-            "video_subject":data["title"], "video_script":data["voiceover"],
+            "video_subject":data["title"], "video_script":self.voice_script(data["voiceover"]),
             "video_terms":terms[:7], "video_aspect":"9:16", "video_source":"pexels",
             "video_concat_mode":"random", "video_transition_mode":"None", "video_clip_duration":4, "video_count":1,
-            "voice_name":self.settings.mpt_voice_name, "voice_rate":1.08, "subtitle_enabled":True,
-            "subtitle_position":"bottom", "video_language":"ru-RU",
-            "bgm_type":"random", "bgm_volume":0.18, "voice_volume":1.0,
+            "voice_name":self.settings.mpt_voice_name, "voice_rate":1.13, "subtitle_enabled":True,
+            "subtitle_position":"custom", "custom_position":76.0,
+            "font_name":"DejaVuSans-Bold.ttf", "font_size":52,
+            "text_fore_color":"#FFFFFF", "text_background_color":"#000000",
+            "stroke_color":"#000000", "stroke_width":2.0, "paragraph_number":1,
+            "video_language":"ru-RU", "n_threads":2,
+            "bgm_type":"random", "bgm_volume":0.12, "voice_volume":1.0,
         }
+
+    @staticmethod
+    def voice_script(value):
+        """Give neural TTS natural phrasing without dramatic synthetic pauses."""
+        text=plain_text(str(value or ""))
+        text=re.sub(r"[\r\n]+"," ",text)
+        text=text.replace("—",",").replace("–",",")
+        text=re.sub(r"\.{2,}",".",text)
+        text=re.sub(r"\s*[,;:]\s*",", ",text)
+        text=re.sub(r",(?:\s*,)+",",",text)
+        return re.sub(r"\s{2,}"," ",text).strip(" ,")
 
     async def _request_json(self,session,method,path,**kwargs):
         async with session.request(method,self.settings.mpt_base_url+path,**kwargs) as response:

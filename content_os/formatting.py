@@ -46,20 +46,38 @@ EMOJI_SETS = {
     "gifts": ("💎", "📉", "🎁", "🔥", "🧠", "👀", "⚠️"),
 }
 
+EMOJI_RE = re.compile(
+    "[\U0001F1E6-\U0001F1FF\U0001F300-\U0001FAFF\u2600-\u27BF]"
+    "[\uFE0F\u200D\U0001F3FB-\U0001F3FF]*"
+)
+
+
+def _editorial_punctuation(value: str) -> str:
+    """Apply the channel's compact Telegram punctuation rules."""
+    text = re.sub(r"\.\s*(?=" + EMOJI_RE.pattern + r")", " ", value)
+    text = re.sub(r"(" + EMOJI_RE.pattern + r")\.", r"\1", text)
+    lines = text.rstrip().splitlines()
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index].strip():
+            lines[index] = re.sub(r"\.\s*$", "", lines[index])
+            break
+    return "\n".join(lines)
+
 
 def decorate_post(value: str, channel_key: str) -> str:
     """Guarantee readable emphasis and emoji anchors even when the LLM ignores markup."""
     text=plain_text(value)
     text=re.sub(r"\*\*|__|(?<!\*)\*(?!\*)", "", text)
+    # The editor, not the model, controls visual density: start from clean copy and
+    # add only two deliberate anchors. Variation comes from the channel palette.
+    text=EMOJI_RE.sub("",text)
+    text=re.sub(r"[ \t]{2,}"," ",text)
     paragraphs=[part.strip() for part in re.split(r"\n\s*\n",text) if part.strip()]
     if not paragraphs: return text
     emojis=EMOJI_SETS.get(channel_key,EMOJI_SETS["liga"])
     paragraphs[0]=f"{emojis[0]} <b>{paragraphs[0]}</b>"
     if len(paragraphs)>2:
-        paragraphs[1]=f"{emojis[1]} {paragraphs[1]}"
         paragraphs[-2]=f"{emojis[3]} <i>{paragraphs[-2]}</i>"
     elif len(paragraphs)==2:
         paragraphs[1]=f"{emojis[1]} <i>{paragraphs[1]}</i>"
-    last=paragraphs[-1]
-    if not last.startswith(emojis): paragraphs[-1]=f"{emojis[2]} {last}"
-    return "\n\n".join(paragraphs)
+    return _editorial_punctuation("\n\n".join(paragraphs))
