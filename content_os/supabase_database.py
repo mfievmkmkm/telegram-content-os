@@ -138,3 +138,10 @@ class SupabaseDatabase:
 
     def update_service_order(self,order_id,status):
         self.client.table("content_os_service_orders").update({"status":status}).eq("id",order_id).execute()
+
+    def save_funnel_event(self,user_id,event_type,source="",offer_key=""):
+        self.client.table("content_os_funnel_events").insert({"user_id":user_id,"event_type":event_type,
+          "source":source or None,"offer_key":offer_key or None,"created_at":datetime.now(self.timezone).isoformat()}).execute()
+
+    def funnel_events(self,limit=5000):
+        return self.client.table("content_os_funnel_events").select("*").order("id",desc=True).limit(limit).execute().data

@@ -52,6 +52,9 @@ class Database:
               id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,username TEXT,
               offer_key TEXT NOT NULL,brief TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',
               created_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS funnel_events(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,event_type TEXT NOT NULL,
+              source TEXT,offer_key TEXT,created_at TEXT NOT NULL);
             """)
             columns={row[1] for row in db.execute("PRAGMA table_info(drafts)")}
             if "published_message_id" not in columns:
@@ -191,3 +194,10 @@ class Database:
 
     def update_service_order(self,order_id,status):
         with self.connect() as db: db.execute("UPDATE service_orders SET status=? WHERE id=?",(status,order_id))
+
+    def save_funnel_event(self,user_id,event_type,source="",offer_key=""):
+        with self.connect() as db: db.execute("INSERT INTO funnel_events(user_id,event_type,source,offer_key,created_at) VALUES(?,?,?,?,?)",
+          (user_id,event_type,source,offer_key,datetime.now(self.timezone).isoformat()))
+
+    def funnel_events(self,limit=5000):
+        with self.connect() as db: return db.execute("SELECT * FROM funnel_events ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
