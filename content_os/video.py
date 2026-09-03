@@ -20,8 +20,15 @@ class VideoFactory:
 
     async def create(self, draft):
         raw=await self.editor.llm(CHANNELS[draft["channel_key"]]["voice"],f"{SHORTS_RULES}\n\nПОСТ:\n{draft['text']}",.95)
-        raw=raw.strip().removeprefix("```json").removesuffix("```").strip()
-        data=json.loads(raw)
+        try:
+            data=self.parse_json(raw)
+        except (json.JSONDecodeError,ValueError):
+            repaired=await self.editor.llm(
+                "Ты JSON-валидатор. Исправь синтаксис и верни только один JSON-объект без markdown.",
+                raw,
+                .1,
+            )
+            data=self.parse_json(repaired)
         self.validate(data)
         data.update({"draft_id":draft["id"],"channel":draft["channel_key"],"aspect_ratio":"9:16","language":"ru"})
         payload=json.dumps(data,ensure_ascii=False,indent=2); job_id=self.db.save_video_job(draft["id"],payload)
@@ -32,6 +39,13 @@ class VideoFactory:
                     if response.status>=400: raise RuntimeError(f"MoneyPrinterTurbo adapter HTTP {response.status}")
                     delivered=True
         return job_id,data,payload,delivered
+
+    @staticmethod
+    def parse_json(raw):
+        text=(raw or "").strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        start,end=text.find("{"),text.rfind("}")
+        if start<0 or end<start: raise ValueError("Shorts: модель не вернула JSON")
+        return json.loads(text[start:end+1])
 
     @staticmethod
     def validate(data):
