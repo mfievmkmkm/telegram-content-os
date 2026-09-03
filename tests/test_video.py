@@ -19,3 +19,7 @@ def test_short_video_is_rejected():
 def test_json_can_be_extracted_from_model_chatter():
     data=VideoFactory.parse_json('Вот результат:\n```json\n{"title":"x"}\n```')
     assert data["title"]=="x"
+
+
+def test_mpt_nested_response_is_unwrapped():
+    assert VideoFactory._data({"status":200,"data":{"task_id":"abc"}})["task_id"]=="abc"
