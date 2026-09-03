@@ -30,6 +30,7 @@ def test_mpt_nested_response_is_unwrapped():
 def test_busy_worker_gateway_error_is_transient():
     assert VideoFactory.transient_status_error(RuntimeError('MoneyPrinterTurbo HTTP 502: Application failed to respond'))
     assert not VideoFactory.transient_status_error(RuntimeError('MoneyPrinterTurbo HTTP 401: invalid key'))
+    assert not VideoFactory.transient_status_error(RuntimeError('MoneyPrinterTurbo HTTP 404: task not found'))
 
 
 def test_mpt_payload_always_contains_broad_stock_queries():
