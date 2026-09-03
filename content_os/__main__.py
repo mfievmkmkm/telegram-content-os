@@ -28,7 +28,7 @@ from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
 from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
 from .funnel import summarize_funnel
-from .brand_cards import gift_card
+from .brand_cards import gift_card, use_gift_card
 from .mtproto_publish import PremiumPublisher
 
 settings=load_settings()
@@ -98,9 +98,10 @@ def back_menu():
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
     if chat:
-        image=BufferedInputFile(gift_card(draft["text"],draft["format_key"]),filename=f"gi-{draft_id}.png") if draft["channel_key"]=="gifts" else await discover_image(draft["source_url"] or "")
+        branded=draft["channel_key"]=="gifts" and use_gift_card(draft_id)
+        image=BufferedInputFile(gift_card(draft["text"],draft["format_key"]),filename=f"gi-{draft_id}.png") if branded else (await discover_image(draft["source_url"] or "") if draft["channel_key"]!="gifts" else None)
         if image:
-            try: await bot.send_photo(int(chat),image,caption="🖼 Бесплатная иллюстрация из исходного материала")
+            try: await bot.send_photo(int(chat),image,caption="Предпросмотр фирменной карточки" if branded else "Предпросмотр иллюстрации")
             except Exception: log.info("Source image unavailable: %s",image)
         await bot.send_message(int(chat),f"{cfg['emoji']} <b>{cfg['title']} · {draft['format_key']} · хук {draft['hook_score']}/5</b>\n\n{render(draft['channel_key'],draft['text'])}",
                                parse_mode=ParseMode.HTML,reply_markup=keyboard(draft_id),disable_web_page_preview=True)
@@ -132,13 +133,13 @@ async def publish(draft_id):
             sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=sales_url)]])
     rendered=render(draft["channel_key"],draft["text"])+(sales_link or "")
     if premium_publisher.ready:
-        image=gift_card(draft["text"],draft["format_key"]) if draft["channel_key"]=="gifts" else None
+        image=gift_card(draft["text"],draft["format_key"]) if draft["channel_key"]=="gifts" and use_gift_card(draft_id) else None
         sent=await premium_publisher.send(channel,rendered,image)
-    elif draft["channel_key"]=="gifts":
+    elif draft["channel_key"]=="gifts" and use_gift_card(draft_id):
         card=BufferedInputFile(gift_card(draft["text"],draft["format_key"]),filename=f"gi-{draft_id}.png")
         sent=await bot.send_photo(channel,card,caption=rendered,parse_mode=ParseMode.HTML,reply_markup=sales_markup)
     else:
-        image=await discover_image(draft["source_url"] or "")
+        image=await discover_image(draft["source_url"] or "") if draft["channel_key"]!="gifts" else None
         if image:
             try: await bot.send_photo(channel,image)
             except Exception: log.info("Source image unavailable during publish: %s",image)
