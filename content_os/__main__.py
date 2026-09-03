@@ -91,7 +91,13 @@ async def gift_data_post(message:Message):
     wait=await message.answer("🛰 Снимаю рынок: объёмы, greed, health и наши сигналы…")
     try:
         snapshot=await gifts_data.snapshot(); facts=gifts_data.editorial_facts(snapshot)
-        draft_id=await editor.create_gifts_data_post(facts); await wait.edit_text(f"✅ Рыночный срез собран. Ошибок источников: {len(snapshot['errors'])}")
+        if facts:
+            draft_id=await editor.create_gifts_data_post(facts)
+            await wait.edit_text(f"✅ Рыночный срез собран. Ошибок источников: {len(snapshot['errors'])}")
+        else:
+            draft_id=await editor.create("gifts")
+            reason="; ".join(snapshot["errors"][:2]) or "API вернул пустые данные"
+            await wait.edit_text("⚠️ Рыночный API сейчас недоступен, поэтому сделал честный Gifts-разбор без цен.\n\n"+html.escape(reason[:500]),parse_mode=ParseMode.HTML)
         await review(draft_id)
     except Exception as exc:
         log.exception("Gifts Data Desk failed"); await wait.edit_text(f"❌ Data Desk: {html.escape(str(exc)[:400])}",parse_mode=ParseMode.HTML)
@@ -185,14 +191,16 @@ async def create_shorts(c:CallbackQuery):
     if not admin(c): return
     draft_id=int(c.data.split(":")[1]); await c.answer("Собираю хук, озвучку и сцены…")
     try:
-        job_id,data,payload,delivered=await videos.create(db.draft(draft_id))
-        scenes="\n".join(f"{i+1}. {s['seconds']}с · {s['screen_text']}\n{s['visual']}" for i,s in enumerate(data["scenes"]))
-        await c.message.answer(
-          f"🎬 <b>Shorts #{job_id} · {html.escape(data['title'])}</b>\n\n"
-          f"<b>Хук:</b> {html.escape(data['hook'])}\n\n<b>Озвучка:</b>\n{html.escape(data['voiceover'])}\n\n"
-          f"<b>Монтаж:</b>\n{html.escape(scenes)}\n\n<b>CTA:</b> {html.escape(data['cta'])}\n\n"
-          f"⚙️ {'Отправлен в MPT' if delivered else 'JSON готов; webhook MPT пока не задан'}",parse_mode=ParseMode.HTML)
-        await bot.send_document(c.message.chat.id,BufferedInputFile(payload.encode(),filename=f"shorts-job-{job_id}.json"),caption="Задание для MoneyPrinterTurbo/монтажа")
+        job_id,data,_,_=await videos.create(db.draft(draft_id))
+        if not settings.mpt_base_url:
+            return await c.message.answer("🎬 Сценарий готов, но видеосервер MoneyPrinterTurbo ещё не подключён. После его развёртывания здесь будет приходить готовый MP4 — технический JSON больше не показываю.")
+        status=await c.message.answer("🎬 <b>Собираю Shorts: 0%</b>\nПодбираю кадры, озвучку и субтитры…",parse_mode=ParseMode.HTML)
+        async def progress(value):
+            try: await status.edit_text(f"🎬 <b>Собираю Shorts: {value}%</b>\nПодбираю кадры, озвучку и субтитры…",parse_mode=ParseMode.HTML)
+            except Exception: pass
+        _,video=await videos.render(data,progress)
+        await status.delete()
+        await bot.send_video(c.message.chat.id,BufferedInputFile(video,filename=f"shorts-{job_id}.mp4"),caption=f"🎬 {data['title']}\n\n{data['caption']}",supports_streaming=True)
     except Exception as exc:
         log.exception("Shorts generation failed"); await c.message.answer(f"❌ Shorts не собрался: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
 
