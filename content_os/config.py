@@ -20,6 +20,10 @@ class Settings:
     timezone: ZoneInfo
     auto_publish: bool
     mpt_webhook_url: str
+    mpt_base_url: str
+    mpt_api_key: str
+    mpt_voice_name: str
+    mpt_timeout_minutes: int
     gift_asset_url: str
     gift_asset_key: str
     gift_asset_header: str
@@ -47,6 +51,10 @@ def load_settings() -> Settings:
         timezone=ZoneInfo(os.getenv("TIMEZONE", "Asia/Yekaterinburg")),
         auto_publish=os.getenv("AUTO_PUBLISH", "false").lower() in {"1", "true", "yes"},
         mpt_webhook_url=os.getenv("MPT_WEBHOOK_URL", "").strip(),
+        mpt_base_url=os.getenv("MPT_BASE_URL", "").strip().rstrip("/"),
+        mpt_api_key=os.getenv("MPT_API_KEY", "").strip(),
+        mpt_voice_name=os.getenv("MPT_VOICE_NAME", "ru-RU-DmitryNeural").strip(),
+        mpt_timeout_minutes=max(3,int(os.getenv("MPT_TIMEOUT_MINUTES", "20"))),
         gift_asset_url=os.getenv("GIFT_ASSET_BASE_URL", "https://giftasset.gifts").rstrip("/"),
         gift_asset_key=os.getenv("GIFT_ASSET_API_KEY", "").strip(),
         gift_asset_header=os.getenv("GIFT_ASSET_API_HEADER", "X-API-Key").strip(),
