@@ -20,6 +20,8 @@ from .history import HistoryImporter
 from .gifts_data import GiftsDataDesk
 from .analytics import AnalyticsCollector
 from .video import VideoFactory
+from .formatting import telegram_html
+from .media import discover_image
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -47,8 +49,13 @@ def keyboard(draft_id):
 
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
-    if chat: await bot.send_message(int(chat),f"{cfg['emoji']} <b>{cfg['title']} · {draft['format_key']} · хук {draft['hook_score']}/5</b>\n\n{html.escape(draft['text'])}",
-                                    parse_mode=ParseMode.HTML,reply_markup=keyboard(draft_id),disable_web_page_preview=True)
+    if chat:
+        image=await discover_image(draft["source_url"] or "")
+        if image:
+            try: await bot.send_photo(int(chat),image,caption="🖼 Бесплатная иллюстрация из исходного материала")
+            except Exception: log.info("Source image unavailable: %s",image)
+        await bot.send_message(int(chat),f"{cfg['emoji']} <b>{cfg['title']} · {draft['format_key']} · хук {draft['hook_score']}/5</b>\n\n{telegram_html(draft['text'])}",
+                               parse_mode=ParseMode.HTML,reply_markup=keyboard(draft_id),disable_web_page_preview=True)
 
 async def generate(channel_key):
     try:
@@ -58,7 +65,12 @@ async def generate(channel_key):
     except Exception: log.exception("Generation failed for %s",channel_key)
 
 async def publish(draft_id):
-    draft=db.draft(draft_id); sent=await bot.send_message(settings.channels[draft["channel_key"]],draft["text"])
+    draft=db.draft(draft_id); channel=settings.channels[draft["channel_key"]]
+    image=await discover_image(draft["source_url"] or "")
+    if image:
+        try: await bot.send_photo(channel,image)
+        except Exception: log.info("Source image unavailable during publish: %s",image)
+    sent=await bot.send_message(channel,telegram_html(draft["text"]),parse_mode=ParseMode.HTML,disable_web_page_preview=True)
     db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=sent.message_id)
 
 @router.message(CommandStart())
@@ -116,7 +128,7 @@ async def rewrite_cb(c:CallbackQuery):
     if not admin(c): return
     mode,draft_id=c.data.split(":"); draft_id=int(draft_id); await c.answer("Переписываю…")
     text,score=await editor.rewrite(db.draft(draft_id),mode); db.update(draft_id,text=text,hook_score=score)
-    await c.message.edit_text(f"📝 <b>Черновик #{draft_id} · хук {score}/5</b>\n\n{html.escape(text)}",parse_mode=ParseMode.HTML,reply_markup=keyboard(draft_id))
+    await c.message.edit_text(f"📝 <b>Черновик #{draft_id} · хук {score}/5</b>\n\n{telegram_html(text)}",parse_mode=ParseMode.HTML,reply_markup=keyboard(draft_id))
 
 def schedule_keyboard(draft_id):
     now=datetime.now(settings.timezone); slots=[]
