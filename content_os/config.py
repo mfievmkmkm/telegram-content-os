@@ -10,6 +10,7 @@ def csv(name: str, default: str) -> list[str]:
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
+    shop_bot_token: str
     admins: frozenset[str]
     llm_key: str
     llm_url: str
@@ -33,6 +34,9 @@ class Settings:
     telegram_api_id: int
     telegram_api_hash: str
     telegram_session: str
+    publish_via_mtproto: bool
+    course_channels: list[str]
+    course_import_limit: int
     analytics_sync_minutes: int
     matchlens_base_url: str
     matchlens_api_key: str
@@ -49,6 +53,7 @@ class Settings:
 def load_settings() -> Settings:
     return Settings(
         bot_token=os.environ["BOT_TOKEN"],
+        shop_bot_token=os.getenv("SHOP_BOT_TOKEN", "").strip(),
         admins=frozenset(x.lower().lstrip("@") for x in csv("ADMIN_USERNAMES", "skillell")),
         llm_key=os.getenv("LLM_API_KEY", "").strip(),
         llm_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/"),
@@ -72,6 +77,9 @@ def load_settings() -> Settings:
         telegram_api_id=int(os.getenv("TELEGRAM_API_ID", "0") or 0),
         telegram_api_hash=os.getenv("TELEGRAM_API_HASH", "").strip(),
         telegram_session=os.getenv("TELEGRAM_SESSION_STRING", "").strip(),
+        publish_via_mtproto=os.getenv("PUBLISH_VIA_MTPROTO", "false").lower() in {"1","true","yes"},
+        course_channels=csv("COURSE_CHANNELS", ""),
+        course_import_limit=max(20,min(500,int(os.getenv("COURSE_IMPORT_LIMIT","150")))),
         analytics_sync_minutes=max(15,int(os.getenv("ANALYTICS_SYNC_MINUTES", "60"))),
         matchlens_base_url=os.getenv("MATCHLENS_BASE_URL", "").strip().rstrip("/"),
         matchlens_api_key=os.getenv("MATCHLENS_API_KEY", "").strip(),
