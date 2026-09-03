@@ -16,3 +16,6 @@ def test_short_video_is_rejected():
     data=valid_payload()
     for scene in data["scenes"]: scene["seconds"]=2
     with pytest.raises(ValueError): VideoFactory.validate(data)
+def test_json_can_be_extracted_from_model_chatter():
+    data=VideoFactory.parse_json('Вот результат:\n```json\n{"title":"x"}\n```')
+    assert data["title"]=="x"
