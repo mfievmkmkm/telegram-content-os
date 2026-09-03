@@ -474,8 +474,9 @@ async def generation_mode(c:CallbackQuery,state:FSMContext):
     if mode=="auto":
         await c.answer("Редакция ищет сильный заход…"); return await generate(channel)
     if mode=="series":
-        rows=[[InlineKeyboardButton(text=f"{name} · {fmt.replace('_',' ')}",callback_data=f"series:{channel}:{key}")]
-              for key,(name,fmt,_) in SERIES[channel].items()]
+        rows=[[InlineKeyboardButton(text=f"{name}",callback_data=f"series:{channel}:{key}"),
+               InlineKeyboardButton(text="Сезон ×3",callback_data=f"seriespack:{channel}:{key}")]
+              for key,(name,_,_) in SERIES[channel].items()]
         await c.message.edit_text("Выбирай сериал — бот сохранит его характер:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)); return await c.answer()
     await state.update_data(channel=channel)
     if mode=="topic":
@@ -521,6 +522,27 @@ async def series_selected(c:CallbackQuery):
     try: draft_id=await editor.create_from_brief(channel,fmt,f"Серия «{name}». {brief}",name)
     except Exception as exc: log.exception("Series generation failed"); return await c.message.answer(f"❌ Не собрал выпуск: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
     await review(draft_id)
+
+@router.callback_query(F.data.startswith("seriespack:"))
+async def series_pack(c:CallbackQuery):
+    if not admin(c): return
+    _,channel,key=c.data.split(":",2)
+    if channel not in SERIES or key not in SERIES[channel]: return await c.answer("Серия не найдена",show_alert=True)
+    name,fmt,brief=SERIES[channel][key]; await c.answer("Собираю сезон из трёх выпусков…")
+    wait=await c.message.answer(f"🎞 <b>{html.escape(name)} · сезон ×3</b>\n\nСоздаю три разных захода без повторов…",parse_mode=ParseMode.HTML)
+    arcs=[
+      "Выпуск 1/3. Открой конфликт и сломай привычное убеждение. Не раскрывай всё сразу.",
+      "Выпуск 2/3. Покажи механизм проблемы на конкретной ситуации. Не повторяй хук первого выпуска.",
+      "Выпуск 3/3. Дай практический выход или жёсткий выбор. Заверши сезон сильнее, чем начал.",
+    ]; created=[]
+    try:
+        for index,arc in enumerate(arcs,1):
+            draft_id=await editor.create_from_brief(channel,fmt,f"Серия «{name}». {brief}\n{arc}",f"{name} · {index}/3")
+            created.append(draft_id); await wait.edit_text(f"🎞 <b>{html.escape(name)}</b>\n\nГотово {index}/3",parse_mode=ParseMode.HTML)
+    except Exception as exc:
+        log.exception("Series pack failed"); return await wait.edit_text(f"⚠️ Создано {len(created)}/3. Ошибка: {html.escape(str(exc)[:240])}",parse_mode=ParseMode.HTML)
+    await wait.edit_text(f"✅ <b>Сезон готов</b>\n\nЧерновики: {', '.join('#'+str(x) for x in created)}\nКаждый выпуск пришёл отдельной карточкой",parse_mode=ParseMode.HTML)
+    for draft_id in created: await review(draft_id)
 
 @router.callback_query(F.data.startswith("publish:"))
 async def pub_cb(c:CallbackQuery):
