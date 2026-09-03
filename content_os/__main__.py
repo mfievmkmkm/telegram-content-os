@@ -14,13 +14,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .channels import CHANNELS
 from .config import load_settings
 from .database import Database
+from .supabase_database import SupabaseDatabase
 from .editor import Editor
 from .history import HistoryImporter
 from .gifts_data import GiftsDataDesk
 from .analytics import AnalyticsCollector
 from .video import VideoFactory
 
-settings=load_settings(); db=Database(settings.database_path,settings.timezone); editor=Editor(settings,db)
+settings=load_settings()
+db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
+    if settings.supabase_url and settings.supabase_key else Database(settings.database_path,settings.timezone))
+editor=Editor(settings,db)
 videos=VideoFactory(settings,db,editor)
 history=HistoryImporter(db)
 gifts_data=GiftsDataDesk(settings)
