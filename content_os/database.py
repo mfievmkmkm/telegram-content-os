@@ -55,6 +55,9 @@ class Database:
             CREATE TABLE IF NOT EXISTS funnel_events(
               id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,event_type TEXT NOT NULL,
               source TEXT,offer_key TEXT,created_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS course_notes(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,source_channel TEXT NOT NULL,message_id INTEGER NOT NULL,
+              text TEXT NOT NULL,posted_at TEXT,imported_at TEXT NOT NULL,UNIQUE(source_channel,message_id));
             """)
             columns={row[1] for row in db.execute("PRAGMA table_info(drafts)")}
             if "published_message_id" not in columns:
@@ -204,3 +207,11 @@ class Database:
 
     def funnel_events(self,limit=5000):
         with self.connect() as db: return db.execute("SELECT * FROM funnel_events ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
+
+    def save_course_note(self,source_channel,message_id,text,posted_at=None):
+        with self.connect() as db:
+            cur=db.execute("INSERT OR IGNORE INTO course_notes(source_channel,message_id,text,posted_at,imported_at) VALUES(?,?,?,?,?)",
+              (source_channel,message_id,text,posted_at,datetime.now(self.timezone).isoformat())); return bool(cur.rowcount)
+
+    def course_snippets(self,limit=12):
+        with self.connect() as db: return db.execute("SELECT text,source_channel FROM course_notes ORDER BY id DESC LIMIT ?",(limit,)).fetchall()

@@ -149,3 +149,12 @@ class SupabaseDatabase:
 
     def funnel_events(self,limit=5000):
         return self.client.table("content_os_funnel_events").select("*").order("id",desc=True).limit(limit).execute().data
+
+    def save_course_note(self,source_channel,message_id,text,posted_at=None):
+        existing=self.client.table("content_os_course_notes").select("id").eq("source_channel",source_channel).eq("message_id",message_id).limit(1).execute().data
+        if existing: return False
+        self.client.table("content_os_course_notes").insert({"source_channel":source_channel,"message_id":message_id,"text":text,
+          "posted_at":posted_at,"imported_at":datetime.now(self.timezone).isoformat()}).execute(); return True
+
+    def course_snippets(self,limit=12):
+        return self.client.table("content_os_course_notes").select("text,source_channel").order("id",desc=True).limit(limit).execute().data

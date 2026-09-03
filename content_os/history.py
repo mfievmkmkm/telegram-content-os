@@ -102,3 +102,22 @@ class HistoryImporter:
                 except Exception as exc: results.append(ImportResult(source_channel,role,found,added,str(exc)[:120]))
         finally: await client.disconnect()
         return results
+
+    async def sync_courses(self):
+        if not self.mtproto_ready: raise RuntimeError("Сначала подключи TELEGRAM_API_ID, TELEGRAM_API_HASH и TELEGRAM_SESSION_STRING")
+        if not self.settings.course_channels: raise RuntimeError("COURSE_CHANNELS пока пуст")
+        client=TelegramClient(StringSession(self.settings.telegram_session),self.settings.telegram_api_id,self.settings.telegram_api_hash)
+        await client.connect(); results=[]
+        try:
+            if not await client.is_user_authorized(): raise RuntimeError("Telegram session не авторизована")
+            for channel in self.settings.course_channels:
+                found=added=0
+                try:
+                    async for message in client.iter_messages(channel,limit=self.settings.course_import_limit):
+                        text=(message.message or "").strip()
+                        if len(text)<80: continue
+                        found+=1; added+=self.db.save_course_note(channel,message.id,text[:12000],message.date.isoformat() if message.date else None)
+                    results.append(ImportResult(channel,"course",found,added))
+                except Exception as exc: results.append(ImportResult(channel,"course",found,added,str(exc)[:120]))
+        finally: await client.disconnect()
+        return results

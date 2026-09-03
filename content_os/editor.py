@@ -89,6 +89,15 @@ class Editor:
         text=decorate_post(text,"liga")
         return self.db.save_draft("liga","match_radar",text,score,"Match Radar","",None)
 
+    async def create_from_courses(self,channel_key):
+        snippets=self.db.course_snippets(10)
+        if not snippets: raise RuntimeError("База курсов пока пуста — сначала запусти /coursesync")
+        knowledge="\n---\n".join(row["text"][:1800] for row in snippets)
+        prompt=("Ниже приватные учебные заметки, к которым владелец имеет доступ. Извлеки ОДИН общий принцип психологии, продаж, внимания или принятия решений. "
+                "Не цитируй, не называй автора или курс, не воспроизводи структуру урока. Полностью переосмысли принцип для аудитории канала.\n\n"+knowledge)
+        cfg=CHANNELS[channel_key]; text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.86)); score,_=score_hook(plain_text(text)); text=decorate_post(text,channel_key)
+        return self.db.save_draft(channel_key,"course_insight",text,score,"Course Intelligence","",None)
+
     async def create_from_brief(self,channel_key,format_key,brief,title="Своя тема",url=""):
         cfg=CHANNELS[channel_key]; examples=[row["text"][:1000] for row in self.db.style_examples(channel_key)]
         style=("\n\nНАШ РИТМ — не копируй фразы:\n---\n"+"\n---\n".join(examples)) if examples else ""
