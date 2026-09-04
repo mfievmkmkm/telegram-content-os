@@ -65,11 +65,15 @@ def _fit(draw,text,box,max_size=72,min_size=34,max_lines=5,bold=True,color=(245,
         draw.text((x,y),line,font=font(min_size,bold),fill=color); y+=int(min_size*1.18)
     return y
 
-def _brand(draw,accent,label="INTELLIGENCE"):
-    draw.text((72,62),"GI",font=font(34),fill=accent); draw.text((145,68),f"GIFTS / {label}",font=font(25),fill=(218,222,230))
+def _brand(draw,accent,label="INTELLIGENCE",channel="gifts"):
+    mark,title=("GI","GIFTS") if channel=="gifts" else ("LP","LIGA PROGRESS")
+    draw.text((72,62),mark,font=font(34),fill=accent); draw.text((145,68),f"{title} / {label}",font=font(25),fill=(218,222,230))
 
-def _dashboard(draw,lines,accent,seed):
-    draw.rectangle((0,0,1080,1080),fill=(7,10,14)); _brand(draw,accent,"MARKET DESK")
+def _footer(channel):
+    return "GIFTS INTELLIGENCE • MARKET DESK" if channel=="gifts" else "LIGA PROGRESS • GAME LAB"
+
+def _dashboard(draw,lines,accent,seed,channel="gifts"):
+    draw.rectangle((0,0,1080,1080),fill=(7,10,14)); _brand(draw,accent,"MARKET DESK" if channel=="gifts" else "MATCH DATA",channel)
     draw.rounded_rectangle((62,130,1018,640),36,fill=(13,19,25),outline=(40,49,58),width=2)
     numbers=re.findall(r"(?:\$|≈)?\d[\d\s.,]*(?:%|TON|k|K|зв[её]зд)?",plain_text(" ".join(lines)))
     metric=(numbers[0].strip() if numbers else "SIGNAL")[:16]
@@ -80,38 +84,60 @@ def _dashboard(draw,lines,accent,seed):
     for gy in (360,440,520,600): draw.line((90,gy,990,gy),fill=(29,38,47),width=2)
     draw.line(points,fill=accent,width=9,joint="curve")
     draw.rounded_rectangle((62,676,1018,1000),32,fill=(18,23,29)); _fit(draw,_hook(lines),(92,720,870,190),58,36,3)
-    draw.text((92,944),"НЕ ЦЕНА. КОНТЕКСТ.",font=font(22),fill=(130,140,150))
+    draw.text((92,944),"НЕ ЦИФРА. КОНТЕКСТ.",font=font(22),fill=(130,140,150))
 
-def _meme(draw,lines,accent,seed):
-    draw.rectangle((0,0,1080,1080),fill=(235,238,241)); _brand(draw,(25,30,35),"MEME UNIT")
+def _meme(draw,lines,accent,seed,channel="gifts"):
+    draw.rectangle((0,0,1080,1080),fill=(235,238,241)); _brand(draw,(25,30,35),"MEME UNIT",channel)
     draw.rounded_rectangle((54,135,1026,1018),48,fill=(20,23,28)); draw.ellipse((88,190,202,304),fill=accent)
-    draw.text((122,215),"GI",font=font(26),fill=(10,12,14)); draw.text((228,194),"рынок подарков",font=font(29),fill=(245,247,250)); draw.text((228,240),"был недавно",font=font(20,False),fill=(132,142,152))
+    mark="GI" if channel=="gifts" else "LP"; room="рынок подарков" if channel=="gifts" else "футбольная раздевалка"
+    draw.text((122,215),mark,font=font(26),fill=(10,12,14)); draw.text((228,194),room,font=font(29),fill=(245,247,250)); draw.text((228,240),"только что",font=font(20,False),fill=(132,142,152))
     _fit(draw,_hook(lines),(110,350,820,250),58,34,4)
     answer=textwrap.shorten(lines[1] if len(lines)>1 else "рынок: красиво держишь пакет",width=90,placeholder="…")
     draw.rounded_rectangle((255,675,940,870),34,fill=(45,52,61)); _fit(draw,answer,(292,714,610,120),35,25,3,False)
     draw.text((110,932),"FORWARD ЭТОМУ САМОМУ ХОЛДЕРУ",font=font(22),fill=accent)
 
-def _dossier(draw,lines,accent,seed):
-    draw.rectangle((0,0,1080,1080),fill=(228,224,212)); draw.polygon([(0,0),(1080,0),(1080,185),(0,255)],fill=(18,20,23)); _brand(draw,accent,"RISK FILE")
+def _dossier(draw,lines,accent,seed,channel="gifts"):
+    draw.rectangle((0,0,1080,1080),fill=(228,224,212)); draw.polygon([(0,0),(1080,0),(1080,185),(0,255)],fill=(18,20,23)); _brand(draw,accent,"RISK FILE" if channel=="gifts" else "COACH FILE",channel)
     draw.rounded_rectangle((70,210,1010,1008),24,fill=(247,244,234),outline=(28,30,34),width=3)
     draw.rectangle((104,250,410,305),fill=accent); draw.text((126,260),"ДОСЬЕ / ОШИБКА",font=font(24),fill=(10,12,14))
     y=_fit(draw,_hook(lines),(108,352,820,260),62,34,5,color=(28,31,35)); draw.line((108,y+24,930,y+24),fill=(30,33,37),width=4); y+=62
     detail=" ".join(lines[1:3]) or "Красивый актив ещё не означает живой спрос"
     for line in textwrap.wrap(textwrap.shorten(detail,width=180,placeholder="…"),width=47)[:5]:
         draw.ellipse((112,y+7,132,y+27),fill=accent); draw.text((154,y),line,font=font(29,False),fill=(31,34,38)); y+=47
-    draw.text((108,946),f"CASE #{seed%9000+1000} / GI INTERNAL",font=font(20),fill=(100,100,96))
+    draw.text((108,946),f"CASE #{seed%9000+1000} / {'GI' if channel=='gifts' else 'LP'} INTERNAL",font=font(20),fill=(100,100,96))
 
-def _editorial(draw,lines,accent,seed):
+def _editorial(draw,lines,accent,seed,channel="gifts"):
     draw.rectangle((0,0,1080,1080),fill=(12,13,16)); draw.rectangle((0,0,390,1080),fill=accent); draw.rectangle((390,0,420,1080),fill=(235,239,242))
-    draw.text((58,70),"GIFTS",font=font(52),fill=(8,10,12)); draw.text((58,132),"INTELLIGENCE",font=font(23),fill=(8,10,12)); draw.text((58,870),"READ",font=font(102),fill=(8,10,12)); draw.text((58,978),"BEFORE BUY",font=font(25),fill=(8,10,12))
+    left=("GIFTS","INTELLIGENCE","BEFORE BUY") if channel=="gifts" else ("LIGA","PROGRESS","BEFORE KICK-OFF")
+    draw.text((58,70),left[0],font=font(52),fill=(8,10,12)); draw.text((58,132),left[1],font=font(23),fill=(8,10,12)); draw.text((58,870),"READ",font=font(102),fill=(8,10,12)); draw.text((58,978),left[2],font=font(22),fill=(8,10,12))
     draw.text((470,78),"THE BRIEF",font=font(24),fill=accent); y=_fit(draw,_hook(lines),(470,155,540,390),62,34,6)
     draw.line((470,y+25,990,y+25),fill=accent,width=4); y+=65; detail=" ".join(lines[1:3]) or "Смотри глубже красивой оболочки"
     _fit(draw,textwrap.shorten(detail,width=170,placeholder="…"),(470,y,520,260),34,25,7,False)
 
-def _spotlight(draw,lines,accent,seed):
-    draw.rectangle((0,0,1080,1080),fill=(8,10,14)); _brand(draw,accent,"OBJECT LAB"); draw.ellipse((585,120,1085,620),fill=tuple(max(0,c//4) for c in accent))
+def _spotlight(draw,lines,accent,seed,channel="gifts"):
+    draw.rectangle((0,0,1080,1080),fill=(8,10,14)); _brand(draw,accent,"OBJECT LAB" if channel=="gifts" else "PLAYER LAB",channel); draw.ellipse((585,120,1085,620),fill=tuple(max(0,c//4) for c in accent))
     draw.rounded_rectangle((675,205,955,515),58,fill=accent,outline=(245,247,250),width=7); draw.polygon([(815,238),(915,350),(815,485),(715,350)],fill=(245,247,250)); draw.polygon([(815,270),(872,350),(815,430),(758,350)],fill=(18,22,27))
-    draw.rounded_rectangle((58,610,1022,1015),38,fill=(18,22,28)); _fit(draw,_hook(lines),(92,650,870,225),58,34,4); draw.text((92,950),"OBJECT ≠ LIQUIDITY",font=font(24),fill=accent)
+    draw.rounded_rectangle((58,610,1022,1015),38,fill=(18,22,28)); _fit(draw,_hook(lines),(92,650,870,225),58,34,4); draw.text((92,950),"OBJECT ≠ LIQUIDITY" if channel=="gifts" else "MOTION ≠ IMPACT",font=font(24),fill=accent)
+
+def _photo_split(lines,seed,scene_name,channel="gifts"):
+    palettes={"gifts":((176,255,0),(91,223,255),(202,112,255),(255,186,51),(255,79,96)),
+              "liga":((100,255,171),(67,205,255),(255,177,45),(180,139,255),(242,247,250))}
+    accent=palettes[channel][seed%5]
+    image=Image.open(SCENE_DIR/scene_name).convert("RGB").resize((1080,1080),Image.Resampling.LANCZOS)
+    draw=ImageDraw.Draw(image); draw.rectangle((0,0,500,1080),fill=(7,9,13)); draw.rectangle((470,0,500,1080),fill=accent)
+    _brand(draw,accent,"FIELD NOTE",channel); _fit(draw,_hook(lines).upper(),(65,190,365,560),57,31,8)
+    draw.text((65,985),_footer(channel),font=font(17),fill=(170,178,188)); return image
+
+def _number_poster(lines,seed,scene_name,channel="gifts"):
+    palettes={"gifts":((176,255,0),(91,223,255),(202,112,255),(255,186,51),(255,79,96)),
+              "liga":((100,255,171),(67,205,255),(255,177,45),(180,139,255),(242,247,250))}
+    accent=palettes[channel][seed%5]
+    image=Image.open(SCENE_DIR/scene_name).convert("RGB").resize((1080,1080),Image.Resampling.LANCZOS).convert("RGBA")
+    veil=Image.new("RGBA",image.size,(5,6,10,155)); image=Image.alpha_composite(image,veil).convert("RGB"); draw=ImageDraw.Draw(image)
+    draw.text((62,40),f"0{seed%9+1}",font=display_font(210),fill=(*accent,90),stroke_width=2,stroke_fill=accent)
+    draw.rounded_rectangle((55,515,1025,1015),38,fill=(6,8,12,230),outline=accent,width=4)
+    draw.text((92,555),"THE TAKE",font=font(22),fill=accent); _fit(draw,_hook(lines).upper(),(92,620,850,260),66,35,5)
+    draw.text((92,956),_footer(channel),font=font(18),fill=(175,182,192)); return image
 
 def _cinematic(lines,seed,scene_name,channel="gifts"):
     """Cinematic scene + editorial typography, inspired by high-end thumbnails."""
@@ -146,16 +172,29 @@ def _cinematic(lines,seed,scene_name,channel="gifts"):
     draw.text((70,1025),footer,font=font(18),fill=(178,184,194))
     return image
 
+def _designed(lines,seed,scene,channel,format_key):
+    palettes={"gifts":((176,255,0),(91,223,255),(202,112,255),(255,186,51),(255,79,96)),
+              "liga":((100,255,171),(67,205,255),(255,177,45),(180,139,255),(242,247,250))}
+    accent=palettes[channel][seed%5]
+    # Eight genuinely different compositions; deterministic so previews and publications match.
+    layouts=(_cinematic,_dashboard,_meme,_dossier,_editorial,_spotlight,_photo_split,_number_poster)
+    preferred={"мем":2,"рынок_за_минуту":1,"data_desk":1,"разбор_ошибки":3,"course_insight":4,
+               "обучение":4,"сигнал_или_шум":5,"тренировка":6,"история":7}
+    index=preferred.get(format_key,seed%len(layouts))
+    renderer=layouts[index]
+    if renderer in (_cinematic,_photo_split,_number_poster): return renderer(lines,seed,scene,channel)
+    image=Image.new("RGB",(1080,1080)); renderer(ImageDraw.Draw(image),lines,accent,seed,channel); return image
+
 def gift_card(post_text,format_key="intelligence"):
     """Cinematic gift-card pool; legacy flat templates are intentionally disabled."""
     lines=_lines(post_text); digest=hashlib.sha256((format_key+plain_text(post_text)).encode()).hexdigest(); seed=int(digest[:8],16)
     scene="fomo_meme.webp" if format_key=="мем" else _pick_gift_scene(plain_text(post_text),seed)
-    image=_cinematic(lines,seed,scene)
+    image=_designed(lines,seed,scene,"gifts",format_key)
     output=io.BytesIO(); image.save(output,"PNG",optimize=True); return output.getvalue()
 
 def liga_card(post_text,format_key="football"):
     """Cinematic football card pool with deterministic story-based rotation."""
     lines=_lines(post_text); digest=hashlib.sha256(("liga"+format_key+plain_text(post_text)).encode()).hexdigest(); seed=int(digest[:8],16)
     scene=("empty_bench.webp","golden_bench.webp")[seed%2] if format_key=="мем" else _pick_liga_scene(plain_text(post_text),seed)
-    image=_cinematic(lines,seed,scene,"liga")
+    image=_designed(lines,seed,scene,"liga",format_key)
     output=io.BytesIO(); image.save(output,"PNG",optimize=True); return output.getvalue()
