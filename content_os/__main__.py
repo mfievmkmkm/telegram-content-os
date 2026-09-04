@@ -113,6 +113,11 @@ def main_keyboard():
 def back_menu():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
 
+def admin_nav(back_callback="panel:home"):
+    return InlineKeyboardMarkup(inline_keyboard=[[
+      InlineKeyboardButton(text="‹ Назад",callback_data=back_callback),
+      InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
+
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
     if chat:
@@ -430,6 +435,7 @@ async def games(message:Message):
     rows=fixtures_keyboard_rows(fixtures)
     if not rows: return await wait.edit_text("Сегодня в выбранных турнирах матчей не найдено.")
     keyboard_rows=[[InlineKeyboardButton(text=label,callback_data=f"gamepost:{fixture_id}")] for label,fixture_id in rows]
+    keyboard_rows.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
     await wait.edit_text("⚽ <b>Какой матч вскрываем?</b>\n\nБот возьмёт реальные события и статистику, найдёт один сильный конфликт и соберёт пост.",
                          parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows))
 
@@ -450,7 +456,7 @@ async def match_start(message:Message,state:FSMContext):
     if not matchlens.ready:
         return await message.answer("❌ <b>MatchLens пока недоступен</b>\n\nВ Railway не подключён отдельный сервис анализа видео. Матч не будет принят, пока health-check сервиса не пройдёт",parse_mode=ParseMode.HTML)
     await state.clear(); await state.set_state(MatchState.waiting_source)
-    await message.answer("⚽ <b>MatchLens</b>\n\nПришли ссылку на полный матч, тайм или игровой эпизод. Подойдут YouTube и прямая ссылка на файл.\n\nЗагрузку больших видео прямо в Telegram добавим вместе с видеосервером.",parse_mode=ParseMode.HTML)
+    await message.answer("⚽ <b>MatchLens</b>\n\nПришли ссылку на полный матч, тайм или игровой эпизод. Подойдут YouTube и прямая ссылка на файл.",parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:football"))
 
 @router.message(MatchState.waiting_source)
 async def match_source(message:Message,state:FSMContext):
@@ -461,12 +467,12 @@ async def match_source(message:Message,state:FSMContext):
         try: source=await matchlens.upload_telegram(bot,media.file_id,int(media.file_size or 0))
         except Exception as exc: return await wait.edit_text(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
         await wait.delete(); await state.update_data(source_type="telegram",source_ref=source); await state.set_state(MatchState.waiting_player)
-        return await message.answer("Кого выделяем? Напиши номер, цвет формы и позицию. Например:\n<code>№7, синяя форма, правый вингер</code>",parse_mode=ParseMode.HTML)
+        return await message.answer("Кого выделяем? Напиши номер, цвет формы и позицию. Например:\n<code>№7, синяя форма, правый вингер</code>",parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:match"))
     source=(message.text or "").strip()
     try: MatchRequest("url",source,"проверка").validate()
     except ValueError: return await message.answer("Нужна полная ссылка, начинающаяся с http:// или https://")
     await state.update_data(source_type="url",source_ref=source); await state.set_state(MatchState.waiting_player)
-    await message.answer("Кого выделяем? Напиши, например:\n\n<code>№7, синяя форма, правый вингер</code>\nили\n<code>вся команда в белом</code>",parse_mode=ParseMode.HTML)
+    await message.answer("Кого выделяем? Напиши, например:\n\n<code>№7, синяя форма, правый вингер</code>\nили\n<code>вся команда в белом</code>",parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:match"))
 
 @router.message(MatchState.waiting_player)
 async def match_player(message:Message,state:FSMContext):
@@ -476,7 +482,8 @@ async def match_player(message:Message,state:FSMContext):
     await state.update_data(player_ref=player); await state.set_state(MatchState.waiting_mode)
     await message.answer("Что собираем?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="👤 Только игрок",callback_data="matchmode:player"),InlineKeyboardButton(text="🧩 Команда",callback_data="matchmode:team")],
-      [InlineKeyboardButton(text="🔥 Полный разбор",callback_data="matchmode:full")]]))
+      [InlineKeyboardButton(text="🔥 Полный разбор",callback_data="matchmode:full")],
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:match"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]))
 
 @router.callback_query(MatchState.waiting_mode,F.data.startswith("matchmode:"))
 async def match_submit(c:CallbackQuery,state:FSMContext):
@@ -616,9 +623,9 @@ async def generation_mode(c:CallbackQuery,state:FSMContext):
         await c.message.edit_text("Выбирай сериал — бот сохранит его характер:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)); return await c.answer()
     await state.update_data(channel=channel)
     if mode=="topic":
-        await state.set_state(GenerateState.waiting_topic); await c.message.answer("Напиши тему, мысль или сырой набросок. Можно одной фразой — я докручу заход, но факты выдумывать не буду.")
+        await state.set_state(GenerateState.waiting_topic); await c.message.answer("Напиши тему, мысль или сырой набросок. Можно одной фразой — я докручу заход, но факты выдумывать не буду.",reply_markup=admin_nav(f"gen:{channel}"))
     else:
-        await state.set_state(GenerateState.waiting_url); await c.message.answer("Пришли ссылку на статью или страницу. Я вытащу смысл, а ссылку и источник в пост не поставлю.")
+        await state.set_state(GenerateState.waiting_url); await c.message.answer("Пришли ссылку на статью или страницу. Я вытащу смысл, а ссылку и источник в пост не поставлю.",reply_markup=admin_nav(f"gen:{channel}"))
     await c.answer()
 
 @router.message(GenerateState.waiting_topic)
@@ -745,7 +752,7 @@ async def schedule_at(c:CallbackQuery):
 async def custom_schedule(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     draft_id=int(c.data.split(":")[1]); await state.set_state(ScheduleState.waiting_datetime); await state.update_data(draft_id=draft_id)
-    await c.message.answer("Напиши дату и время по Екатеринбургу:\n<code>03.09 14:35</code>",parse_mode=ParseMode.HTML); await c.answer()
+    await c.message.answer("Напиши дату и время по Екатеринбургу:\n<code>03.09 14:35</code>",parse_mode=ParseMode.HTML,reply_markup=admin_nav(f"back:{draft_id}")); await c.answer()
 
 @router.message(ScheduleState.waiting_datetime)
 async def custom_schedule_value(message:Message,state:FSMContext):
@@ -782,9 +789,9 @@ async def unschedule(c:CallbackQuery):
     await c.message.answer(f"↩️ Пост #{draft_id} снят с расписания и возвращён в черновики.",reply_markup=keyboard(draft_id))
 
 @router.callback_query(F.data.startswith("back:"))
-async def back_to_draft(c:CallbackQuery):
+async def back_to_draft(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
-    draft_id=int(c.data.split(":")[1]); await c.message.edit_reply_markup(reply_markup=keyboard(draft_id)); await c.answer()
+    await state.clear(); draft_id=int(c.data.split(":")[1]); await c.message.edit_reply_markup(reply_markup=keyboard(draft_id)); await c.answer()
 
 @router.callback_query(F.data.startswith("delete:"))
 async def delete(c:CallbackQuery):
@@ -821,11 +828,11 @@ async def panel_games(c:CallbackQuery):
     if not admin(c): return
     await c.answer("Сканирую матчи…"); wait=await c.message.answer("📡 Сканирую сегодняшние матчи…")
     try: fixtures=await football.fixtures()
-    except Exception as exc: return await wait.edit_text(f"❌ Match Radar: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+    except Exception as exc: return await wait.edit_text(f"❌ Match Radar: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:football"))
     rows=fixtures_keyboard_rows(fixtures)
-    if not rows: return await wait.edit_text("Сегодня в выбранных турнирах матчей не найдено.",reply_markup=back_menu())
+    if not rows: return await wait.edit_text("Сегодня в выбранных турнирах матчей не найдено.",reply_markup=admin_nav("panel:football"))
     buttons=[[InlineKeyboardButton(text=label,callback_data=f"gamepost:{fixture_id}")] for label,fixture_id in rows]
-    buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    buttons.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
     await wait.edit_text("⚽ <b>Какой матч вскрываем?</b>\n\nВозьму реальные события и статистику.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @router.callback_query(F.data=="panel:match")
@@ -833,9 +840,9 @@ async def panel_match(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     if not matchlens.ready:
         await c.answer("MatchLens не подключён",show_alert=True)
-        return await c.message.answer("❌ Анализ видео пока выключен: отдельный MatchLens-сервис не подключён",reply_markup=back_menu())
+        return await c.message.answer("❌ Анализ видео пока выключен: отдельный MatchLens-сервис не подключён",reply_markup=admin_nav("panel:football"))
     await state.clear(); await state.set_state(MatchState.waiting_source); await c.answer()
-    await c.message.answer("⚽ <b>MatchLens</b>\n\nПришли видео из Telegram, ссылку на YouTube или прямую ссылку на файл.",parse_mode=ParseMode.HTML)
+    await c.message.answer("⚽ <b>MatchLens</b>\n\nПришли видео из Telegram, ссылку на YouTube или прямую ссылку на файл.",parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:football"))
 
 @router.callback_query(F.data=="panel:gifts")
 async def panel_gifts(c:CallbackQuery):
@@ -903,20 +910,21 @@ async def panel_status(c:CallbackQuery):
     await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=back_menu())
 
 @router.callback_query(F.data=="panel:courses")
-async def panel_courses(c:CallbackQuery):
+async def panel_courses(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
+    await state.clear()
     buttons=[
       [InlineKeyboardButton(text="🔄 Загрузить новые уроки",callback_data="panel:coursesync")],
       [InlineKeyboardButton(text="📎 Добавить PDF / DOCX / TXT",callback_data="panel:coursefile")],
       [InlineKeyboardButton(text="🎁 Пост для Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="⚽ Пост для Лиги",callback_data="coursemake:liga")],
-      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:system"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]
     await c.message.edit_text("📚 <b>Course Intelligence</b>\n\nЧитает только каналы из COURSE_CHANNELS, извлекает идеи и никогда не указывает курс в посте",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
 
 @router.callback_query(F.data=="panel:coursefile")
 async def panel_course_file(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     await state.set_state(CourseFileState.waiting_file); await c.answer()
-    await c.message.answer("📎 Пришли один файл курса: PDF, DOCX, TXT, MD, SRT или VTT — до 20 МБ. Я извлеку только текст и добавлю его в базу знаний")
+    await c.message.answer("📎 Пришли один файл курса: PDF, DOCX, TXT, MD, SRT или VTT — до 20 МБ. Я извлеку только текст и добавлю его в базу знаний",reply_markup=admin_nav("panel:courses"))
 
 @router.message(CourseFileState.waiting_file,F.document)
 async def import_course_file(message:Message,state:FSMContext):
