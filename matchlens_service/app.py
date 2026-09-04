@@ -15,8 +15,10 @@ from pydantic import BaseModel, Field
 from ultralytics import YOLO
 try:
     from .analytics import coach_notes, player_report
+    from .visuals import COLOR_RU, jersey_color, player_wall
 except ImportError:  # Railway root directory can be matchlens_service/
     from analytics import coach_notes, player_report
+    from visuals import COLOR_RU, jersey_color, player_wall
 
 DATA=Path(os.getenv("MATCHLENS_DATA_DIR","/data")); UPLOADS=DATA/"uploads"; JOBS=DATA/"jobs"; ARTIFACTS=DATA/"artifacts"
 for folder in (UPLOADS,JOBS,ARTIFACTS): folder.mkdir(parents=True,exist_ok=True)
@@ -112,7 +114,7 @@ def analyse(job_id):
     job=read_job(job_id)
     try:
         job.update(status="processing",progress=5); write_job(job); video=resolve_source(job); cap=cv2.VideoCapture(str(video))
-        fps=max(1.0,cap.get(cv2.CAP_PROP_FPS)); frames=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); duration=frames/fps; stride=max(1,int(fps/4)); tracks=defaultdict(list); balls=[]; index=0; best_preview=None; best_count=0
+        fps=max(1.0,cap.get(cv2.CAP_PROP_FPS)); frames=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); duration=frames/fps; stride=max(1,int(fps/4)); tracks=defaultdict(list); balls=[]; index=0; best_crops={}
         detector=get_model()
         while True:
             ok,frame=cap.read()
@@ -120,28 +122,30 @@ def analyse(job_id):
             if index%stride: index+=1; continue
             result=detector.track(frame,persist=True,tracker="bytetrack.yaml",classes=[0,32],verbose=False,imgsz=640)[0]
             if result.boxes is not None:
-                frame_people=[]
                 for box in result.boxes:
                     cls=int(box.cls.item()); xy=box.xyxy[0].tolist(); cx=(xy[0]+xy[2])/2/frame.shape[1]; cy=(xy[1]+xy[3])/2/frame.shape[0]
                     if cls==32: balls.append((index/fps,cx,cy)); continue
                     if box.id is not None:
-                        track_id=int(box.id.item()); tracks[track_id].append((index/fps,cx,cy)); frame_people.append((track_id,xy))
-                if len(frame_people)>best_count:
-                    preview=frame.copy()
-                    for track_id,xy in frame_people:
-                        x1,y1,x2,y2=map(int,xy); cv2.rectangle(preview,(x1,y1),(x2,y2),(80,255,130),3)
-                        cv2.putText(preview,f"ID {track_id}",(x1,max(28,y1-8)),cv2.FONT_HERSHEY_SIMPLEX,.9,(80,255,130),3,cv2.LINE_AA)
-                    best_preview=preview; best_count=len(frame_people)
+                        track_id=int(box.id.item()); tracks[track_id].append((index/fps,cx,cy))
+                        x1,y1,x2,y2=map(int,xy); x1=max(0,x1); y1=max(0,y1); x2=min(frame.shape[1],x2); y2=min(frame.shape[0],y2)
+                        crop=frame[y1:y2,x1:x2]
+                        if crop.size:
+                            score=crop.shape[0]*crop.shape[1]
+                            if score>best_crops.get(track_id,(0,None))[0]: best_crops[track_id]=(score,crop.copy())
             index+=1
             if index%(stride*80)==0: job["progress"]=min(65,5+int(index/max(1,frames)*60)); write_job(job)
         cap.release(); summary={}; raw={}
-        for track_id,points in tracks.items():
-            summary[str(track_id)]=player_report(points,duration); raw[str(track_id)]=points
+        ranked=sorted(tracks.items(),key=lambda item:len(item[1]),reverse=True)[:36]
+        crops={track_id:value[1] for track_id,value in best_crops.items() if track_id in dict(ranked)}
+        for track_id,points in ranked:
+            report=player_report(points,duration); report["jersey_color"]=jersey_color(crops.get(track_id)); report["jersey_color_ru"]=COLOR_RU[report["jersey_color"]]
+            summary[str(track_id)]=report; raw[str(track_id)]=points
         (JOBS/f"{job_id}.tracks.json").write_text(json.dumps(raw),"utf-8")
-        if best_preview is not None:
-            folder=ARTIFACTS/job_id; folder.mkdir(parents=True,exist_ok=True); cv2.imwrite(str(folder/"players.jpg"),best_preview); job["preview_ready"]=True
+        if crops:
+            folder=ARTIFACTS/job_id; folder.mkdir(parents=True,exist_ok=True); player_wall(crops,summary,folder/"players.jpg"); job["preview_ready"]=True
         job["video_path"]=str(video)
-        job["metrics"]={"duration_seconds":round(duration,1),"players":summary,"ball_detections":len(balls),"sampling_fps":4,"accuracy_note":"Координаты и движение оценены по кадру; это не GPS-метрики"}
+        job["metrics"]={"duration_seconds":round(duration,1),"players":summary,"ball_detections":len(balls),"sampling_fps":4,
+                        "accuracy_note":"Координаты, цвет формы и движение оценены по кадру. Это не GPS и не официальный event-data"}
         job.update(status="awaiting_selection",progress=70,report_url=f"/v1/reports/{job_id}"); write_job(job)
     except Exception as exc:
         job.update(status="failed",error=f"{type(exc).__name__}: {str(exc)[:400]}"); write_job(job)
