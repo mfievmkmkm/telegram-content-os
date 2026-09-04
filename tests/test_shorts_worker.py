@@ -1,4 +1,4 @@
-from shorts_service.core import ass_subtitles, caption_chunks, clean_script, unique_terms
+from shorts_service.core import alignment_chunks, ass_subtitles, caption_chunks, clean_script, unique_terms
 
 
 def test_script_is_tight_and_subtitles_are_short():
@@ -13,3 +13,14 @@ def test_script_is_tight_and_subtitles_are_short():
 def test_stock_terms_are_safe_and_unique():
     terms=unique_terms({"video_terms":["football training","Football Training","TON $$$ chart","","gift"]})
     assert terms==["football training","TON  chart","gift"]
+
+
+def test_alignment_chunks_follow_real_voice_timing():
+    text="Смотри рынок сейчас"
+    alignment={"characters":list(text),
+      "character_start_times_seconds":[i*.05 for i in range(len(text))],
+      "character_end_times_seconds":[(i+1)*.05 for i in range(len(text))]}
+    chunks=alignment_chunks(alignment,2)
+    assert chunks[0][0]=="Смотри рынок сейчас"
+    assert chunks[0][1]==0
+    assert chunks[-1][2]>.8
