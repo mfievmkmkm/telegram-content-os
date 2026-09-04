@@ -40,6 +40,17 @@ class MatchLensClient:
     def ready(self):
         return bool(self.base_url)
 
+    async def probe(self):
+        if not self.base_url: return False,"URL не задан"
+        headers={"x-api-key":self.api_key} if self.api_key else {}
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),headers=headers) as session:
+                async with session.get(f"{self.base_url}/health") as response:
+                    data=await response.json(content_type=None)
+                    if response.status>=400 or not data.get("ok"): return False,f"HTTP {response.status}"
+            return True,f"модель {data.get('model','не указана')}"
+        except Exception as exc: return False,f"{type(exc).__name__}: {str(exc)[:120]}"
+
     async def submit(self,request:MatchRequest):
         request.validate()
         local_id=self.db.save_match_job(request.source_type,request.source_ref,request.player_ref,request.analysis_mode)
