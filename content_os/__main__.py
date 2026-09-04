@@ -593,7 +593,7 @@ async def analytics_report(message:Message):
     if not admin(message): return
     wait=await message.answer("📊 Обновляю просмотры, реакции и пересылки…")
     result=await analytics.sync(); report=analytics.report()
-    await wait.edit_text(f"{report}\n\nОбновлено: {result['updated']} · Ошибок: {len(result['errors'])}")
+    await wait.edit_text(f"{report}\n\nОбновлено: {result['updated']} · Ошибок: {len(result['errors'])}",parse_mode=ParseMode.HTML)
 
 @router.message(Command("giftpost"))
 async def gift_data_post(message:Message):
@@ -942,8 +942,16 @@ async def panel_sync(c:CallbackQuery):
 @router.callback_query(F.data=="panel:analytics")
 async def panel_analytics(c:CallbackQuery):
     if not admin(c): return
+    await c.message.edit_text("📊 <b>Центр аналитики</b>\n\nПосты показывают, что удерживает аудиторию. Воронка — что превращает внимание в заявки",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+      [InlineKeyboardButton(text="📈 Обновить показатели постов",callback_data="panel:postmetrics")],
+      [InlineKeyboardButton(text="🎯 Воронка продаж",callback_data="panel:funnel")],
+      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+
+@router.callback_query(F.data=="panel:postmetrics")
+async def panel_post_metrics(c:CallbackQuery):
+    if not admin(c): return
     await c.answer("Обновляю показатели…"); wait=await c.message.answer("📊 Обновляю просмотры, реакции и пересылки…")
-    result=await analytics.sync(); await wait.edit_text(f"{analytics.report()}\n\nОбновлено: {result['updated']} · Ошибок: {len(result['errors'])}",reply_markup=back_menu())
+    result=await analytics.sync(); await wait.edit_text(f"{analytics.report()}\n\nОбновлено: {result['updated']} · Ошибок: {len(result['errors'])}",parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:analytics"))
 
 @router.callback_query(F.data=="panel:funnel")
 async def panel_funnel(c:CallbackQuery):
@@ -954,7 +962,7 @@ async def panel_funnel(c:CallbackQuery):
     offers="\n".join(f"• {html.escape(OFFERS[key].title if key in OFFERS else key)}: {value}" for key,value in report["offers"].most_common()) or "заявок пока нет"
     text=(f"🎯 <b>Воронка продаж</b>\n\nПереходы: <b>{report['landings']}</b>\nОткрытия услуг: <b>{report['offer_views']}</b>\n"
           f"Заявки: <b>{report['orders']}</b>\nКонверсия переход → заявка: <b>{report['conversion']}%</b>\n\n<b>Источники</b>\n{sources}\n\n<b>Что покупают</b>\n{offers}")
-    await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
+    await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:analytics")); await c.answer()
 
 @router.callback_query(F.data=="panel:status")
 async def panel_status(c:CallbackQuery):
