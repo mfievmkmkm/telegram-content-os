@@ -158,3 +158,10 @@ class SupabaseDatabase:
 
     def course_snippets(self,limit=12):
         return self.client.table("content_os_course_notes").select("text,source_channel").order("id",desc=True).limit(limit).execute().data
+
+    def course_stats(self,limit=12):
+        rows=self.client.table("content_os_course_notes").select("source_channel,text").execute().data; grouped={}
+        for row in rows:
+            item=grouped.setdefault(row["source_channel"],{"source_channel":row["source_channel"],"count":0,"chars":0})
+            item["count"]+=1; item["chars"]+=len(row.get("text") or "")
+        return sorted(grouped.values(),key=lambda item:item["count"],reverse=True)[:limit]
