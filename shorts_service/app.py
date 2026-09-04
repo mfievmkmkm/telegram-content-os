@@ -90,7 +90,17 @@ async def pexels_clips(terms:list[str],folder:Path,limit=6)->list[Path]:
 
 def run(command,timeout=900):
     result=subprocess.run(command,capture_output=True,text=True,timeout=timeout)
-    if result.returncode: raise RuntimeError((result.stderr or result.stdout)[-900:])
+    if result.returncode:
+        log=(result.stderr or result.stdout or "").strip()
+        if result.returncode in (-9,137):
+            raise RuntimeError("FFmpeg остановлен из-за нехватки памяти. Worker должен работать в low-memory режиме")
+        # The useful ffmpeg error is usually above the final output summary.
+        lines=[line for line in log.splitlines() if line.strip()]
+        important=[line for line in lines if any(marker in line.lower() for marker in (
+            "error", "failed", "invalid", "unable", "cannot", "no such", "conversion failed"
+        ))]
+        detail="\n".join((important[-6:] or lines[-12:]))[-1200:]
+        raise RuntimeError(f"FFmpeg exit {result.returncode}: {detail}")
 
 
 async def render(task_id:str,payload:dict):
@@ -108,11 +118,18 @@ async def render(task_id:str,payload:dict):
         job["progress"]=45; write_job(job); part_duration=math.ceil(duration/len(clips))+1; normalized=[]
         for index,source in enumerate(clips):
             output=folder/f"part-{index}.mp4"
-            run(["ffmpeg","-y","-stream_loop","-1","-i",str(source),"-t",str(part_duration),"-vf","scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30","-an","-c:v","libx264","-preset","veryfast","-crf","24",str(output)])
+            # 720p is Telegram-native enough and stays inside small Railway RAM limits.
+            run(["ffmpeg","-y","-stream_loop","-1","-i",str(source),"-t",str(part_duration),
+                 "-vf","scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=25",
+                 "-an","-c:v","libx264","-preset","ultrafast","-crf","26","-threads","1",
+                 "-pix_fmt","yuv420p","-movflags","+faststart",str(output)])
             normalized.append(output); job["progress"]=45+int((index+1)/len(clips)*30); write_job(job)
         (folder/"concat.txt").write_text("".join(f"file '{path.name}'\n" for path in normalized),"utf-8")
         (folder/"subs.ass").write_text(ass_subtitles(script,duration),"utf-8")
-        run(["ffmpeg","-y","-f","concat","-safe","0","-i",str(folder/"concat.txt"),"-i",str(folder/"voice.mp3"),"-vf",f"ass={folder/'subs.ass'}","-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","160k","-movflags","+faststart","-shortest",str(folder/"shorts.mp4")])
+        run(["ffmpeg","-y","-f","concat","-safe","0","-i",str(folder/"concat.txt"),"-i",str(folder/"voice.mp3"),
+             "-vf",f"ass={folder/'subs.ass'}","-c:v","libx264","-preset","ultrafast","-crf","25",
+             "-threads","1","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k",
+             "-movflags","+faststart","-shortest",str(folder/"shorts.mp4")])
         job.update(state=1,progress=100,videos=[f"/files/{task_id}.mp4"],error=""); write_job(job)
     except Exception as exc:
         job.update(state=-1,error=f"{type(exc).__name__}: {str(exc)[:700]}"); write_job(job)
