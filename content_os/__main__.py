@@ -118,6 +118,15 @@ def admin_nav(back_callback="panel:home"):
       InlineKeyboardButton(text="‹ Назад",callback_data=back_callback),
       InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
 
+def match_job_keyboard(local_id,tracker_ids=(),result_url=""):
+    rows=[]; ids=[str(value) for value in tracker_ids if str(value).isdigit()][:24]
+    for index in range(0,len(ids),4):
+        rows.append([InlineKeyboardButton(text=f"Игрок #{tracker}",callback_data=f"matchpick:{local_id}:{tracker}") for tracker in ids[index:index+4]])
+    if result_url: rows.append([InlineKeyboardButton(text="📊 Открыть отчёт",url=result_url)])
+    rows.append([InlineKeyboardButton(text="🔄 Обновить статус",callback_data=f"matchrefresh:{local_id}"),InlineKeyboardButton(text="‹ Футбол",callback_data="panel:football")])
+    rows.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
     if chat:
@@ -498,26 +507,50 @@ async def match_submit(c:CallbackQuery,state:FSMContext):
     else:
         text=(f"🧱 <b>Задание #{local_id} сохранено</b>\n\nИгрок: {html.escape(data['player_ref'])}\n"
               "Видеосервис MatchLens ещё не подключён — после его деплоя это задание можно будет отправить в обработку.\n\n"+confidence_legend())
-    await c.message.answer(text,parse_mode=ParseMode.HTML)
+    await c.message.answer(text,parse_mode=ParseMode.HTML,reply_markup=match_job_keyboard(local_id))
+
+async def show_match_status(target,local_id,edit=False):
+    row=await matchlens.refresh(local_id); tracker_ids=[]
+    try: metrics_raw=row["metrics_json"]
+    except (KeyError,IndexError): metrics_raw=None
+    if metrics_raw:
+        try: tracker_ids=list((json.loads(metrics_raw) or {}).get("players",{}))
+        except (TypeError,ValueError): pass
+    ids=f"\nНайдены игроки: <code>{html.escape(', '.join(tracker_ids[:24]))}</code>" if tracker_ids else ""
+    hint=f"{ids}\n\nНажми на ID своего футболиста ниже" if row["status"]=="awaiting_selection" else ""
+    error=f"\nОшибка: {html.escape(row['error'])}" if row["error"] else ""
+    text=f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{hint}{error}"
+    markup=match_job_keyboard(row["id"],tracker_ids if row["status"]=="awaiting_selection" else (),row["result_url"] or "")
+    if edit: await target.edit_text(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
+    else: await target.answer(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
+    return row
 
 @router.message(Command("matchstatus"))
 async def match_status(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(maxsplit=1)
     if len(parts)<2 or not parts[1].isdigit(): return await message.answer("Формат: <code>/matchstatus 1</code>",parse_mode=ParseMode.HTML)
-    try: row=await matchlens.refresh(int(parts[1]))
+    try: await show_match_status(message,int(parts[1]))
     except Exception as exc: return await message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
-    result=f"\n<a href=\"{html.escape(row['result_url'])}\">Открыть результат</a>" if row["result_url"] else ""
-    tracker_ids=[]
-    try: metrics_raw=row["metrics_json"]
-    except (KeyError,IndexError): metrics_raw=None
-    if metrics_raw:
-        try: tracker_ids=list((json.loads(metrics_raw) or {}).get("players",{}))
-        except (TypeError,ValueError): pass
-    ids=f"\nНайдены ID: <code>{html.escape(', '.join(tracker_ids[:30]))}</code>" if tracker_ids else ""
-    hint=(f"{ids}\n\nВыбери футболиста: <code>/matchplayer {row['id']} ID</code>" if row["status"]=="awaiting_selection" else "")
-    error=f"\nОшибка: {html.escape(row['error'])}" if row["error"] else ""
-    await message.answer(f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{result}{hint}{error}",parse_mode=ParseMode.HTML,disable_web_page_preview=True)
+
+@router.callback_query(F.data.startswith("matchrefresh:"))
+async def match_refresh_button(c:CallbackQuery):
+    if not admin(c): return
+    raw=c.data.split(":",1)[1]
+    if not raw.isdigit(): return await c.answer("Некорректный разбор",show_alert=True)
+    await c.answer("Обновляю…")
+    try: await show_match_status(c.message,int(raw),edit=True)
+    except Exception as exc: await c.message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data.startswith("matchpick:"))
+async def match_pick_button(c:CallbackQuery):
+    if not admin(c): return
+    parts=c.data.split(":")
+    if len(parts)!=3 or not parts[1].isdigit() or not parts[2].isdigit(): return await c.answer("Некорректный игрок",show_alert=True)
+    await c.answer("Игрок выбран")
+    try: await matchlens.select_target(int(parts[1]),int(parts[2]))
+    except Exception as exc: return await c.message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    await c.message.edit_text(f"✅ <b>Игрок #{parts[2]} выбран</b>\n\nФинальный отчёт собирается",parse_mode=ParseMode.HTML,reply_markup=match_job_keyboard(int(parts[1])))
 
 @router.message(Command("matchplayer"))
 async def match_player_select(message:Message):
