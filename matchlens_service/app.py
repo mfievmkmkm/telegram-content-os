@@ -8,13 +8,15 @@ from collections import defaultdict
 from pathlib import Path
 
 import cv2
+import numpy as np
 from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel, Field
 from ultralytics import YOLO
+from .analytics import coach_notes, player_report
 
-DATA=Path(os.getenv("MATCHLENS_DATA_DIR","/data")); UPLOADS=DATA/"uploads"; JOBS=DATA/"jobs"
-for folder in (UPLOADS,JOBS): folder.mkdir(parents=True,exist_ok=True)
+DATA=Path(os.getenv("MATCHLENS_DATA_DIR","/data")); UPLOADS=DATA/"uploads"; JOBS=DATA/"jobs"; ARTIFACTS=DATA/"artifacts"
+for folder in (UPLOADS,JOBS,ARTIFACTS): folder.mkdir(parents=True,exist_ok=True)
 API_KEY=os.getenv("MATCHLENS_API_KEY","").strip(); MODEL=os.getenv("MATCHLENS_MODEL","yolo11n.pt")
 app=FastAPI(title="MatchLens",version="0.1.0"); model=None; model_lock=threading.Lock()
 
@@ -23,7 +25,7 @@ class MatchIn(BaseModel):
     source: dict
     target: dict
     mode: str="full"
-    outputs: list[str]=[]
+    outputs: list[str]=Field(default_factory=list)
 
 
 class TargetIn(BaseModel): tracker_id: int
@@ -73,8 +75,18 @@ def target(job_id:str,payload:TargetIn,background:BackgroundTasks,x_api_key:str|
 @app.get("/v1/reports/{job_id}",response_class=HTMLResponse)
 def report(job_id:str):
     job=read_job(job_id); metrics=job.get("metrics",{}); target=metrics.get("selected_player",{})
-    rows="".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k,v in target.items()) or "<tr><td colspan=2>Выбери игрока по tracker_id</td></tr>"
-    return f"<html><meta charset=utf-8><style>body{{background:#090d12;color:#eef;font:18px Arial;max-width:760px;margin:40px auto}}h1{{color:#73ff9f}}table{{width:100%;border-collapse:collapse}}td{{padding:12px;border-bottom:1px solid #29313b}}</style><h1>MatchLens · отчёт</h1><p>Статус: {job['status']}</p><table>{rows}</table></html>"
+    rows="".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k,v in target.items() if k not in {"zones_percent","burst_timestamps","coach_notes"}) or "<tr><td colspan=2>Выбери игрока по tracker_id</td></tr>"
+    notes="".join(f"<li>{x}</li>" for x in target.get("coach_notes",[]))
+    media=f'<img src="/v1/artifacts/{job_id}/heatmap.png"><h2>Ключевые эпизоды</h2>'+"".join(f'<video controls preload="metadata" src="{url}"></video>' for url in job.get("clips",[])) if target else ""
+    return f"<html><meta charset=utf-8><style>body{{background:#090d12;color:#eef;font:18px Arial;max-width:860px;margin:40px auto}}h1,h2{{color:#73ff9f}}table{{width:100%;border-collapse:collapse}}td{{padding:12px;border-bottom:1px solid #29313b}}img,video{{width:100%;border-radius:18px;margin:12px 0}}</style><h1>MatchLens · отчёт</h1><p>Статус: {job['status']}</p><table>{rows}</table><ul>{notes}</ul>{media}</html>"
+
+
+@app.get("/v1/artifacts/{job_id}/{name}")
+def artifact(job_id:str,name:str):
+    if name not in {"heatmap.png","clip-1.mp4","clip-2.mp4","clip-3.mp4"}: raise HTTPException(404,"artifact not found")
+    path=ARTIFACTS/job_id/name
+    if not path.exists(): raise HTTPException(404,"artifact not ready")
+    return FileResponse(path)
 
 
 def resolve_source(job):
@@ -110,10 +122,11 @@ def analyse(job_id):
                     if box.id is not None: tracks[int(box.id.item())].append((index/fps,cx,cy))
             index+=1
             if index%(stride*80)==0: job["progress"]=min(65,5+int(index/max(1,frames)*60)); write_job(job)
-        cap.release(); summary={}
+        cap.release(); summary={}; raw={}
         for track_id,points in tracks.items():
-            distance=sum(((a[1]-b[1])**2+(a[2]-b[2])**2)**.5 for a,b in zip(points,points[1:]))
-            summary[str(track_id)]={"visible_seconds":round(len(points)/4,1),"movement_index":round(distance*100,1),"average_x":round(sum(p[1] for p in points)/len(points),3),"average_y":round(sum(p[2] for p in points)/len(points),3)}
+            summary[str(track_id)]=player_report(points,duration); raw[str(track_id)]=points
+        (JOBS/f"{job_id}.tracks.json").write_text(json.dumps(raw),"utf-8")
+        job["video_path"]=str(video)
         job["metrics"]={"duration_seconds":round(duration,1),"players":summary,"ball_detections":len(balls),"sampling_fps":4,"accuracy_note":"Координаты и движение оценены по кадру; это не GPS-метрики"}
         job.update(status="awaiting_selection",progress=70,report_url=f"/v1/reports/{job_id}"); write_job(job)
     except Exception as exc:
@@ -121,6 +134,19 @@ def analyse(job_id):
 
 
 def build_report(job_id):
-    job=read_job(job_id); players=job.get("metrics",{}).get("players",{}); selected=players.get(str(job.get("tracker_id")))
-    if not selected: job.update(status="failed",error="Выбранный tracker_id не найден в матче"); write_job(job); return
-    job["metrics"]["selected_player"]={"tracker_id":job["tracker_id"],**selected}; job.update(status="completed",progress=100,report_url=f"/v1/reports/{job_id}"); write_job(job)
+    job=read_job(job_id)
+    try:
+        players=job.get("metrics",{}).get("players",{}); selected=players.get(str(job.get("tracker_id")))
+        if not selected: raise ValueError("Выбранный tracker_id не найден в матче")
+        points=json.loads((JOBS/f"{job_id}.tracks.json").read_text("utf-8"))[str(job["tracker_id"])]
+        folder=ARTIFACTS/job_id; folder.mkdir(parents=True,exist_ok=True); heatmap=np.zeros((720,1280),dtype=np.uint8)
+        for _,x,y in points: cv2.circle(heatmap,(int(x*1279),int(y*719)),35,16,-1)
+        heatmap=cv2.GaussianBlur(heatmap,(0,0),35); heatmap=cv2.applyColorMap(cv2.normalize(heatmap,None,0,255,cv2.NORM_MINMAX),cv2.COLORMAP_TURBO); cv2.imwrite(str(folder/"heatmap.png"),heatmap)
+        clips=[]
+        for number,timestamp in enumerate(selected.get("burst_timestamps",[])[:3],1):
+            output=folder/f"clip-{number}.mp4"; start=max(0,float(timestamp)-4)
+            process=subprocess.run(["ffmpeg","-y","-ss",str(start),"-i",job["video_path"],"-t","8","-c:v","libx264","-preset","veryfast","-c:a","aac",str(output)],capture_output=True)
+            if process.returncode==0: clips.append(f"/v1/artifacts/{job_id}/clip-{number}.mp4")
+        job["clips"]=clips; job["metrics"]["selected_player"]={"tracker_id":job["tracker_id"],**selected,"coach_notes":coach_notes(selected)}; job.update(status="completed",progress=100,report_url=f"/v1/reports/{job_id}",error=None); write_job(job)
+    except Exception as exc:
+        job.update(status="failed",error=f"{type(exc).__name__}: {str(exc)[:400]}"); write_job(job)
