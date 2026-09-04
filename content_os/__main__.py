@@ -10,7 +10,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BotCommand, BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import BotCommand, BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .channels import CHANNELS, SERIES
@@ -28,7 +28,7 @@ from .course_files import extract_course_text, course_chunks
 from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
-from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
+from .shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefront
 from .shop_runtime import create_shop_runtime
 from .funnel import summarize_funnel
 from .brand_cards import gift_card, liga_card, use_gift_card, use_liga_card
@@ -107,11 +107,8 @@ def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="✍️ Создать пост",callback_data="panel:generate"),InlineKeyboardButton(text="⏰ Очередь",callback_data="panel:scheduled")],
       [InlineKeyboardButton(text="⚽ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="🎁 Gifts Data",callback_data="panel:gifts")],
-      [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players"),InlineKeyboardButton(text="🎬 Shorts",callback_data="panel:shorts")],
-      [InlineKeyboardButton(text="📊 Контент",callback_data="panel:analytics"),InlineKeyboardButton(text="🎯 Воронка",callback_data="panel:funnel")],
-      [InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
-      [InlineKeyboardButton(text="📥 Заявки клиентов",callback_data="panel:orders")],
-      [InlineKeyboardButton(text="⚙️ Настройки и статус",callback_data="panel:system")]])
+      [InlineKeyboardButton(text="📚 Курсы",callback_data="panel:courses"),InlineKeyboardButton(text="📊 Аналитика постов",callback_data="panel:analytics")],
+      [InlineKeyboardButton(text="📥 Заявки",callback_data="panel:orders"),InlineKeyboardButton(text="⚙️ Управление",callback_data="panel:system")]])
 
 def back_menu():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
@@ -231,13 +228,13 @@ async def shop_order(c:CallbackQuery,state:FSMContext):
     key=c.data.rsplit(":",1)[-1]
     if key not in OFFERS: return await c.answer("Услуга не найдена",show_alert=True)
     current=await state.get_data(); await state.set_state(ShopState.waiting_brief); await state.update_data(offer_key=key,shop_source=current.get("shop_source","direct"))
-    await c.message.edit_text("<b>Одним сообщением:</b> что у тебя сейчас и какой результат хочешь получить?\n\nМожно приложить ссылку на канал, Gift или видео следующим сообщением",parse_mode=ParseMode.HTML); await c.answer()
+    await c.message.edit_text("<b>Одним сообщением:</b> что у тебя сейчас и какой результат хочешь получить?\n\nМожно приложить ссылку на канал, Gift или видео следующим сообщением",parse_mode=ParseMode.HTML,reply_markup=shop_nav(f"shop:offer:{key}")); await c.answer()
 
 @router.callback_query(F.data=="shop:diagnostic")
 async def diagnostic_start(c:CallbackQuery,state:FSMContext):
     if db.get(f"free_diagnostic:{c.from_user.id}"): return await c.answer("Ты уже использовал бесплатную диагностику",show_alert=True)
     await state.set_state(ShopState.waiting_diagnostic)
-    await c.message.edit_text("🎯 <b>Бесплатная экспресс-диагностика</b>\n\nНачни сообщение со слова <b>Футбол</b>, <b>Контент</b> или <b>Gifts</b>, затем коротко опиши проблему\n\nНапример: <i>Футбол. Теряю место в составе после двух слабых матчей</i>",parse_mode=ParseMode.HTML); await c.answer()
+    await c.message.edit_text("🎯 <b>Бесплатная экспресс-диагностика</b>\n\nНачни сообщение со слова <b>Футбол</b>, <b>Контент</b> или <b>Gifts</b>, затем коротко опиши проблему\n\nНапример: <i>Футбол. Теряю место в составе после двух слабых матчей</i>",parse_mode=ParseMode.HTML,reply_markup=shop_nav()); await c.answer()
 
 @router.message(ShopState.waiting_diagnostic)
 async def diagnostic_result(message:Message,state:FSMContext):
@@ -338,6 +335,7 @@ async def panel_football(c:CallbackQuery):
     await c.message.edit_text("⚽ <b>Футбольная лаборатория</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="📡 Матчи сегодня",callback_data="panel:games"),InlineKeyboardButton(text="🎥 Разобрать видео",callback_data="panel:match")],
       [InlineKeyboardButton(text="🔎 Статус разбора",callback_data="panel:matchhelp"),InlineKeyboardButton(text="🎯 Выбрать игрока",callback_data="panel:targethelp")],
+      [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players")],
       [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.callback_query(F.data=="panel:players")
@@ -346,7 +344,7 @@ async def panel_players(c:CallbackQuery):
     await c.message.edit_text("👤 <b>Player Passport</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="➕ Новый футболист",callback_data="panel:newplayer"),InlineKeyboardButton(text="📚 Все футболисты",callback_data="panel:playerlist")],
       [InlineKeyboardButton(text="🔗 Привязать матч",callback_data="panel:linkhelp"),InlineKeyboardButton(text="📈 Открыть паспорт",callback_data="panel:passporthelp")],
-      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.callback_query(F.data=="panel:system")
 async def panel_system(c:CallbackQuery):
@@ -592,14 +590,17 @@ async def gen_cb(c:CallbackQuery):
     await c.message.edit_text("Как собираем пост?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="⚡ Авто: свежий заход",callback_data=f"genmode:{channel}:auto")],
       [InlineKeyboardButton(text="✍️ Напишу тему",callback_data=f"genmode:{channel}:topic"),InlineKeyboardButton(text="🔗 Из статьи",callback_data=f"genmode:{channel}:url")],
-      [InlineKeyboardButton(text="🎞 Фирменная серия",callback_data=f"genmode:{channel}:series")]])); await c.answer()
+      [InlineKeyboardButton(text="🎞 Фирменная серия",callback_data=f"genmode:{channel}:series")],
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:generate"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
 
 def rubric_keyboard(channel):
     labels={"короткий_удар":"⚡ Короткий удар","история":"🎭 История","антисистема":"🥊 Антисистема","разбор":"🔬 Разбор","тренировка":"🏋️ Тренировка",
             "новость":"⚡ Новость","рынок_за_минуту":"📊 Рынок","разбор_ошибки":"🧨 Разбор ошибки","обучение":"🧠 Обучение",
             "сигнал_или_шум":"📡 Сигнал/шум","мем":"😏 Мем"}
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=labels.get(fmt,fmt.replace("_"," ").title()),callback_data=f"rubric:{fmt}")]
-      for fmt in CHANNELS[channel]["formats"]])
+    rows=[[InlineKeyboardButton(text=labels.get(fmt,fmt.replace("_"," ").title()),callback_data=f"rubric:{fmt}")]
+      for fmt in CHANNELS[channel]["formats"]]
+    rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.callback_query(F.data.startswith("genmode:"))
 async def generation_mode(c:CallbackQuery,state:FSMContext):
@@ -611,6 +612,7 @@ async def generation_mode(c:CallbackQuery,state:FSMContext):
         rows=[[InlineKeyboardButton(text=f"{name}",callback_data=f"series:{channel}:{key}"),
                InlineKeyboardButton(text="Сезон ×3",callback_data=f"seriespack:{channel}:{key}")]
               for key,(name,_,_) in SERIES[channel].items()]
+        rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
         await c.message.edit_text("Выбирай сериал — бот сохранит его характер:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)); return await c.answer()
     await state.update_data(channel=channel)
     if mode=="topic":
@@ -981,9 +983,10 @@ async def due():
 
 async def main():
     db.init(); scheduler=AsyncIOScheduler(timezone=settings.timezone)
-    await bot.set_my_commands([BotCommand(command="shop",description="магазин услуг"),BotCommand(command="menu",description="открыть панель управления"),BotCommand(command="generate",description="создать пост"),
+    await bot.set_my_commands([BotCommand(command="start",description="главное меню"),BotCommand(command="menu",description="главное меню"),BotCommand(command="generate",description="создать пост"),
       BotCommand(command="scheduled",description="очередь публикаций"),BotCommand(command="games",description="матчи сегодня"),
       BotCommand(command="match",description="разобрать видео"),BotCommand(command="status",description="состояние системы")])
+    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     for channel,times in settings.schedules.items():
         for i,value in enumerate(times):
             hour,minute=map(int,value.split(":")); scheduler.add_job(generate,"cron",args=[channel],hour=hour,minute=minute,id=f"{channel}_{i}")

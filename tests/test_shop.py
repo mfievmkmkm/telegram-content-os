@@ -1,4 +1,4 @@
-from content_os.shop import OFFERS, category_keyboard, offer_keyboard, storefront
+from content_os.shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefront
 
 
 def test_catalog_has_three_real_directions():
@@ -13,3 +13,10 @@ def test_storefront_and_offer_have_action_buttons():
     assert category_keyboard("liga").inline_keyboard[0][0].callback_data.startswith("shop:offer:")
     assert len(category_keyboard("services").inline_keyboard) == 6
     assert offer_keyboard("ai_short").inline_keyboard[0][0].callback_data == "shop:order:ai_short"
+
+
+def test_shop_navigation_never_traps_customer():
+    callbacks={button.callback_data for row in offer_keyboard("liga_episode").inline_keyboard for button in row if button.callback_data}
+    assert {"shop:home","shop:category:liga"} <= callbacks
+    nav={button.callback_data for row in shop_nav("shop:offer:liga_episode").inline_keyboard for button in row}
+    assert nav=={"shop:offer:liga_episode","shop:home"}

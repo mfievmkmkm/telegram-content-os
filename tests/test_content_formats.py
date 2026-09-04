@@ -1,4 +1,4 @@
-from content_os.channels import CHANNELS, FORMAT_RULES
+from content_os.channels import CHANNELS, CONTENT_LANES, FORMAT_ROTATION, FORMAT_RULES
 from content_os.editor import Editor
 
 
@@ -14,3 +14,11 @@ def test_meme_is_not_forced_into_longread_length():
     assert "100–260" in rule
     assert "статья" in rule
     assert "мем" in FORMAT_RULES
+
+
+def test_editorial_rotation_guarantees_variety():
+    for channel in ("gifts","liga"):
+        rotation=FORMAT_ROTATION[channel]
+        assert rotation.count("мем")>=2
+        assert "короткий_удар" in rotation
+        assert len(CONTENT_LANES[channel])>=7

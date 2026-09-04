@@ -40,12 +40,19 @@ def storefront(gifts_bot_username: str="vsdvscbot") -> InlineKeyboardMarkup:
 def category_keyboard(category: str) -> InlineKeyboardMarkup:
     keys=[key for key,item in OFFERS.items() if item.category==category]
     rows=[[InlineKeyboardButton(text=f"{OFFERS[key].title} · {OFFERS[key].price}",callback_data=f"shop:offer:{key}")] for key in keys]
-    rows.append([InlineKeyboardButton(text="‹ На главную",callback_data="shop:home")])
+    rows.append([InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def offer_keyboard(key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Оставить заявку →",callback_data=f"shop:order:{key}")],
-        [InlineKeyboardButton(text="‹ К разделу",callback_data=f"shop:category:{OFFERS[key].category}")],
+        [InlineKeyboardButton(text="‹ Назад",callback_data=f"shop:category:{OFFERS[key].category}"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
     ])
+
+
+def shop_nav(back_callback: str="shop:home") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="‹ Назад",callback_data=back_callback),
+        InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home"),
+    ]])

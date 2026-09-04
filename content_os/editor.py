@@ -4,7 +4,7 @@ import html
 import random
 
 import aiohttp
-from .channels import CHANNELS, FORMAT_RULES, POST_RULES
+from .channels import CHANNELS, CONTENT_LANES, FORMAT_ROTATION, FORMAT_RULES, POST_RULES
 from .hooks import score_hook
 from .sources import collect_items
 from .formatting import clean_generated_post, decorate_post, plain_text
@@ -37,7 +37,9 @@ class Editor:
 
     async def create(self, channel_key):
         cfg, material = CHANNELS[channel_key], await self.material(channel_key)
-        format_key = random.choices(cfg["formats"],weights=cfg.get("format_weights"),k=1)[0]
+        counter=int(self.db.get(f"editorial_rotation:{channel_key}") or 0); self.db.set(f"editorial_rotation:{channel_key}",str(counter+1))
+        rotation=FORMAT_ROTATION[channel_key]; format_key=rotation[counter%len(rotation)]
+        lanes=CONTENT_LANES[channel_key]; lane=lanes[counter%len(lanes)]
         facts = (f"Заголовок: {material['title']}\nФрагмент: {material['summary']}\n"
                  f"Источник: {material.get('source_name','internet')} · рейтинг {material.get('score','—')}\nURL: {material['url']}") if material["url"] else f"Тема: {material['title']}"
         examples=[row["text"][:1000] for row in self.db.style_examples(channel_key)]
@@ -51,7 +53,8 @@ class Editor:
         insights=self.db.editorial_insights(channel_key)
         learned=("\n\nНАША СТАТИСТИКА: лучше всего работают "+", ".join(f"{x['format_key']} (ER {x['avg_er']:.2f}%, {x['samples']} пост.)" for x in insights)+
                  ". Это ориентир для ритма и угла, но не повод повторять тему.") if insights else ""
-        prompt = f"Рубрика: {format_key}. Формат: {self.format_rule(format_key)} Создай оригинальный пост.\n{facts}{style}{trends}{learned}"
+        prompt = (f"Рубрика: {format_key}. Тематический угол этого выпуска: {lane}. Формат: {self.format_rule(format_key)} "
+                  f"Создай оригинальный пост. Не своди каждый Gifts-пост к floor/FOMO и каждый футбольный пост к страху тренера.\n{facts}{style}{trends}{learned}")
         text = clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt))
         score, reasons = score_hook(plain_text(text))
         if score < 3:

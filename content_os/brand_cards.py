@@ -44,6 +44,8 @@ def _pick_liga_scene(text,seed):
 
 def _pick_gift_scene(text,seed):
     value=text.lower()
+    if any(x in value for x in ("фишинг", "скам", "мошенн", "поддель", "безопас")): return ("alert_vault.webp","rare_safe.webp")[seed%2]
+    if any(x in value for x in ("коллекционер", "эстетик", "истори", "культур")): return ("rare_object.webp","vault_capsule.webp")[seed%2]
     if any(x in value for x in ("кит", "холдер", "разгруз", "вышел")): return ("market_whale.webp","chrome_whale.webp")[seed%2]
     if any(x in value for x in ("аукцион", "торг", "ставк", "покупател")): return ("gift_auction.webp","auction_strike.webp")[seed%2]
     if any(x in value for x in ("fomo", "пик", "корзин", "скуп", "набрал")): return ("fomo_cart.webp","market_cart.webp")[seed%2]

@@ -6,11 +6,11 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, Message
 
 from .channels import CHANNELS
 from .formatting import telegram_html
-from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
+from .shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefront
 
 
 class ClientState(StatesGroup):
@@ -47,7 +47,8 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         await state.clear(); await c.message.edit_text(HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard()); await c.answer()
 
     @router.callback_query(F.data.startswith("shop:category:"))
-    async def category(c:CallbackQuery):
+    async def category(c:CallbackQuery,state:FSMContext):
+        await state.clear()
         key=c.data.rsplit(":",1)[-1]
         if key not in {"liga","services"}: return await c.answer("Раздел не найден",show_alert=True)
         if key=="liga":
@@ -60,7 +61,8 @@ def create_shop_runtime(settings,db,editor,admin_bot):
     async def offer(c:CallbackQuery,state:FSMContext):
         key=c.data.rsplit(":",1)[-1]; item=OFFERS.get(key)
         if not item: return await c.answer("Услуга не найдена",show_alert=True)
-        data=await state.get_data(); track(c.from_user.id,"offer_view",data.get("shop_source","direct"),key)
+        data=await state.get_data(); source=data.get("shop_source","direct"); await state.clear(); await state.update_data(shop_source=source)
+        track(c.from_user.id,"offer_view",source,key)
         text=(f"<b>{html.escape(item.title)}</b>\n"
               f"<b>{html.escape(item.price)}</b>\n\n"
               f"{html.escape(item.description)}\n\n"
@@ -75,7 +77,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         current=await state.get_data(); await state.set_state(ClientState.waiting_brief)
         await state.update_data(offer_key=key,shop_source=current.get("shop_source","direct"))
         prompt="Пришли видео или ссылку и напиши позицию игрока" if OFFERS[key].category=="liga" else "Опиши задачу, площадку и какой результат хочешь получить"
-        await c.message.edit_text(f"<b>Заявка · {html.escape(OFFERS[key].title)}</b>\n\n{prompt}\n\nМожно отправить текст, ссылку или файл одним сообщением",parse_mode=ParseMode.HTML); await c.answer()
+        await c.message.edit_text(f"<b>Заявка · {html.escape(OFFERS[key].title)}</b>\n\n{prompt}\n\nМожно отправить текст, ссылку или файл одним сообщением",parse_mode=ParseMode.HTML,reply_markup=shop_nav(f"shop:offer:{key}")); await c.answer()
 
     @router.message(ClientState.waiting_brief)
     async def brief(message:Message,state:FSMContext):
@@ -96,7 +98,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
     @router.callback_query(F.data=="shop:diagnostic")
     async def diagnostic(c:CallbackQuery,state:FSMContext):
         await state.set_state(ClientState.waiting_diagnostic)
-        await c.message.edit_text("Одним сообщением напиши направление и задачу\n\nНапример:\n<code>Футбол — теряюсь при выходе из прессинга</code>\n<code>Контент — нужны ролики для товара</code>\n<code>Gifts — хочу понять, что даёт подписка</code>",parse_mode=ParseMode.HTML); await c.answer()
+        await c.message.edit_text("Одним сообщением напиши направление и задачу\n\nНапример:\n<code>Футбол — теряюсь при выходе из прессинга</code>\n<code>Контент — нужны ролики для товара</code>\n<code>Gifts — хочу понять, что даёт подписка</code>",parse_mode=ParseMode.HTML,reply_markup=shop_nav()); await c.answer()
 
     @router.message(ClientState.waiting_diagnostic)
     async def diagnose(message:Message,state:FSMContext):
@@ -110,8 +112,16 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         await state.clear()
         if lower.startswith(("gifts","гифт")):
             username=settings.gifts_subscription_bot_username or "vsdvscbot"
-            keyboard=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start=shop")],[InlineKeyboardButton(text="‹ В магазин",callback_data="shop:home")]])
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start=shop")],[InlineKeyboardButton(text="‹ Назад",callback_data="shop:home"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")]])
         else: keyboard=offer_keyboard(offer_key)
         await message.answer(telegram_html(result)+"\n\n<b>Следующий шаг</b>",parse_mode=ParseMode.HTML,reply_markup=keyboard)
 
+    async def setup_commands():
+        await shop_bot.set_my_commands([
+            BotCommand(command="start",description="главная витрина"),
+            BotCommand(command="shop",description="каталог услуг"),
+        ])
+        await shop_bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+    dp.startup.register(setup_commands)
     return shop_bot,dp
