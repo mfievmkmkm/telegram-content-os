@@ -24,7 +24,7 @@ from .gifts_data import GiftsDataDesk
 from .analytics import AnalyticsCollector
 from .video import VideoFactory
 from .formatting import plain_text, telegram_html
-from .course_files import extract_course_text, course_chunks
+from .course_files import course_chunks, extract_course_files
 from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, aggregate_passport, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
@@ -982,16 +982,27 @@ async def panel_courses(c:CallbackQuery,state:FSMContext):
     await state.clear()
     buttons=[
       [InlineKeyboardButton(text="🔄 Загрузить новые уроки",callback_data="panel:coursesync")],
-      [InlineKeyboardButton(text="📎 Добавить PDF / DOCX / TXT",callback_data="panel:coursefile")],
+      [InlineKeyboardButton(text="📦 Добавить файл или ZIP",callback_data="panel:coursefile")],
+      [InlineKeyboardButton(text="📊 Что загружено",callback_data="panel:coursestats")],
       [InlineKeyboardButton(text="🎁 Пост для Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="⚽ Пост для Лиги",callback_data="coursemake:liga")],
       [InlineKeyboardButton(text="‹ Назад",callback_data="panel:system"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]
     await c.message.edit_text("📚 <b>Course Intelligence</b>\n\nЧитает только каналы из COURSE_CHANNELS, извлекает идеи и никогда не указывает курс в посте",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
+
+@router.callback_query(F.data=="panel:coursestats")
+async def panel_course_stats(c:CallbackQuery):
+    if not admin(c): return
+    rows=db.course_stats(); total=sum(int(row["count"]) for row in rows); chars=sum(int(row["chars"] or 0) for row in rows)
+    if rows:
+        sources="\n".join(f"• {html.escape(str(row['source_channel']))}: {row['count']} фрагм. · {int(row['chars'] or 0):,} зн." for row in rows)
+        text=f"📊 <b>База курсов</b>\n\nПоказано фрагментов: <b>{total}</b>\nОбъём: <b>{chars:,}</b> знаков\n\n{sources}"
+    else: text="📊 <b>База курсов пуста</b>\n\nЗагрузи файл/ZIP или настрой COURSE_CHANNELS"
+    await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=admin_nav("panel:courses")); await c.answer()
 
 @router.callback_query(F.data=="panel:coursefile")
 async def panel_course_file(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     await state.set_state(CourseFileState.waiting_file); await c.answer()
-    await c.message.answer("📎 Пришли один файл курса: PDF, DOCX, TXT, MD, SRT или VTT — до 20 МБ. Я извлеку только текст и добавлю его в базу знаний",reply_markup=admin_nav("panel:courses"))
+    await c.message.answer("📦 Пришли PDF, DOCX, TXT, MD, SRT, VTT или ZIP с курсами — до 20 МБ. Из архива прочитаю до 120 файлов, ничего исполнять и распаковывать на диск не буду",reply_markup=admin_nav("panel:courses"))
 
 @router.message(CourseFileState.waiting_file,F.document)
 async def import_course_file(message:Message,state:FSMContext):
@@ -1001,17 +1012,19 @@ async def import_course_file(message:Message,state:FSMContext):
     wait=await message.answer("🧠 Извлекаю текст и режу на смысловые части…")
     try:
         buffer=io.BytesIO(); await bot.download(document.file_id,destination=buffer)
-        text=extract_course_text(document.file_name or "course.txt",buffer.getvalue()); chunks=course_chunks(text)
-        source=f"upload:{(document.file_name or 'course')[:180]}"; added=0
-        for index,chunk in enumerate(chunks):
-            added+=db.save_course_note(source,message.message_id*1000+index,chunk,message.date.isoformat() if message.date else None)
-        await state.clear(); await wait.edit_text(f"✅ <b>Курс добавлен</b>\n\nИзвлечено: {len(text):,} знаков\nСохранено частей: {added}/{len(chunks)}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+        files=extract_course_files(document.file_name or "course.txt",buffer.getvalue()); added=total_chunks=total_chars=0
+        for file_index,(filename,text) in enumerate(files):
+            chunks=course_chunks(text); total_chars+=len(text); total_chunks+=len(chunks); source=f"upload:{filename[:180]}"
+            for chunk_index,chunk in enumerate(chunks):
+                note_id=message.message_id*1_000_000+file_index*1_000+chunk_index
+                added+=db.save_course_note(source,note_id,chunk,message.date.isoformat() if message.date else None)
+        await state.clear(); await wait.edit_text(f"✅ <b>База курсов обновлена</b>\n\nФайлов прочитано: {len(files)}\nИзвлечено: {total_chars:,} знаков\nСохранено частей: {added}/{total_chunks}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
     except Exception as exc:
         await wait.edit_text(f"❌ Не прочитал файл: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
 
 @router.message(CourseFileState.waiting_file)
 async def import_course_file_invalid(message:Message):
-    if admin(message): await message.answer("Нужен именно файл PDF, DOCX, TXT, MD, SRT или VTT")
+    if admin(message): await message.answer("Нужен файл PDF, DOCX, TXT, MD, SRT, VTT или ZIP")
 
 @router.callback_query(F.data=="panel:coursesync")
 async def panel_course_sync(c:CallbackQuery):
