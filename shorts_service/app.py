@@ -21,6 +21,8 @@ except ImportError:
 DATA=Path(os.getenv("SHORTS_DATA_DIR","/data")); JOBS=DATA/"jobs"; TASKS=DATA/"tasks"
 for folder in (JOBS,TASKS): folder.mkdir(parents=True,exist_ok=True)
 API_KEY=os.getenv("SHORTS_API_KEY","").strip(); PEXELS_KEY=os.getenv("PEXELS_API_KEY","").strip()
+ELEVEN_KEY=os.getenv("ELEVENLABS_API_KEY","").strip(); ELEVEN_VOICE=os.getenv("ELEVENLABS_VOICE_ID","").strip()
+ELEVEN_MODEL=os.getenv("ELEVENLABS_MODEL_ID","eleven_multilingual_v2").strip()
 app=FastAPI(title="Content OS Shorts Worker",version="1.0")
 
 
@@ -38,7 +40,8 @@ def write_job(job):
 
 
 @app.get("/health")
-def health(): return {"ok":True,"service":"content-os-shorts","pexels":bool(PEXELS_KEY),"persistent":str(DATA)=="/data"}
+def health(): return {"ok":True,"service":"content-os-shorts","pexels":bool(PEXELS_KEY),"persistent":str(DATA)=="/data",
+                     "voice":"elevenlabs" if ELEVEN_KEY and ELEVEN_VOICE else "edge"}
 
 
 @app.post("/api/v1/videos")
@@ -61,21 +64,22 @@ def video(task_id:str):
     return FileResponse(path,media_type="video/mp4",filename=f"shorts-{task_id}.mp4")
 
 
-async def pexels_clips(terms:list[str],folder:Path,limit=6)->list[Path]:
+async def pexels_clips(terms:list[str],folder:Path,limit=10)->list[Path]:
     if not PEXELS_KEY: raise RuntimeError("PEXELS_API_KEY не задан в Shorts Worker")
     urls=[]; headers={"Authorization":PEXELS_KEY}
     async with aiohttp.ClientSession(headers=headers,timeout=aiohttp.ClientTimeout(total=90)) as session:
         for term in terms:
             async with session.get("https://api.pexels.com/videos/search",params={"query":term,"per_page":8,"orientation":"portrait"}) as response:
                 if response.status>=400: continue
+                added=0
                 for video in (await response.json()).get("videos",[]):
                     files=video.get("video_files") or []
                     vertical=[x for x in files if int(x.get("height") or 0)>int(x.get("width") or 0) and int(x.get("width") or 0)>=540]
                     candidates=vertical or files
                     if candidates:
                         choice=min(candidates,key=lambda x:abs(int(x.get("width") or 720)-720)); url=choice.get("link")
-                        if url and url not in urls: urls.append(url)
-                    if len(urls)>=limit: break
+                        if url and url not in urls: urls.append(url); added+=1
+                    if len(urls)>=limit or added>=2: break
             if len(urls)>=limit: break
         paths=[]
         for index,url in enumerate(urls):
@@ -103,33 +107,53 @@ def run(command,timeout=900):
         raise RuntimeError(f"FFmpeg exit {result.returncode}: {detail}")
 
 
+async def synthesize(script:str,path:Path,voice:str,rate:str)->str:
+    """Premium TTS when configured, free Edge voice as a resilient fallback."""
+    if ELEVEN_KEY and ELEVEN_VOICE:
+        url=f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE}"
+        headers={"xi-api-key":ELEVEN_KEY,"Content-Type":"application/json","Accept":"audio/mpeg"}
+        body={"text":script,"model_id":ELEVEN_MODEL,"voice_settings":{
+            "stability":0.38,"similarity_boost":0.78,"style":0.42,"use_speaker_boost":True,"speed":1.08}}
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
+            async with session.post(url,params={"output_format":"mp3_44100_128"},json=body,headers=headers) as response:
+                if response.status<400:
+                    path.write_bytes(await response.read()); return "elevenlabs"
+    await edge_tts.Communicate(script,voice=voice,rate=rate,pitch="+2Hz").save(str(path)); return "edge"
+
+
 async def render(task_id:str,payload:dict):
     job=read_job(task_id); folder=TASKS/task_id
     try:
         script=clean_script(payload.get("video_script") or payload.get("video_subject") or "")
+        # Long written posts sound synthetic when read aloud. Keep only the sharpest 62 words.
+        script=" ".join(script.split()[:62])
         if len(script)<30: raise RuntimeError("Сценарий озвучки слишком короткий")
         job["progress"]=5; write_job(job)
         voice=str(payload.get("voice_name") or "ru-RU-DmitryNeural")
-        await edge_tts.Communicate(script,voice=voice,rate="+10%").save(str(folder/"voice.mp3"))
+        rate_value=float(payload.get("voice_rate") or 1.18); rate=f"{round((rate_value-1)*100):+d}%"
+        job["voice_provider"]=await synthesize(script,folder/"voice.mp3",voice,rate); write_job(job)
         probe=subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(folder/"voice.mp3")],text=True)
         duration=max(8.0,float(probe.strip())); job["progress"]=20; write_job(job)
         clips=await pexels_clips(unique_terms(payload),folder)
         if len(clips)<3: raise RuntimeError("Pexels вернул меньше трёх пригодных видеоклипов")
-        job["progress"]=45; write_job(job); part_duration=math.ceil(duration/len(clips))+1; normalized=[]
-        for index,source in enumerate(clips):
+        job["progress"]=45; write_job(job); cut=2.0; count=math.ceil(duration/cut); normalized=[]
+        for index in range(count):
+            source=clips[index%len(clips)]
             output=folder/f"part-{index}.mp4"
+            offset=(index//len(clips))*1.7
+            x=(-20,0,20)[index%3]; y=(-36,0,36)[index%3]
             # 720p is Telegram-native enough and stays inside small Railway RAM limits.
-            run(["ffmpeg","-y","-stream_loop","-1","-i",str(source),"-t",str(part_duration),
-                 "-vf","scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=25",
+            run(["ffmpeg","-y","-stream_loop","-1","-i",str(source),"-ss",f"{offset:.1f}","-t",str(cut),
+                 "-vf",f"scale=760:1352:force_original_aspect_ratio=increase,crop=720:1280:(iw-ow)/2+{x}:(ih-oh)/2+{y},eq=contrast=1.05:saturation=1.10,fps=25",
                  "-an","-c:v","libx264","-preset","ultrafast","-crf","26","-threads","1",
                  "-pix_fmt","yuv420p","-movflags","+faststart",str(output)])
-            normalized.append(output); job["progress"]=45+int((index+1)/len(clips)*30); write_job(job)
+            normalized.append(output); job["progress"]=45+int((index+1)/count*30); write_job(job)
         (folder/"concat.txt").write_text("".join(f"file '{path.name}'\n" for path in normalized),"utf-8")
         (folder/"subs.ass").write_text(ass_subtitles(script,duration),"utf-8")
         run(["ffmpeg","-y","-f","concat","-safe","0","-i",str(folder/"concat.txt"),"-i",str(folder/"voice.mp3"),
-             "-vf",f"ass={folder/'subs.ass'}","-c:v","libx264","-preset","ultrafast","-crf","25",
+             "-vf",f"ass={folder/'subs.ass'}","-c:v","libx264","-preset","veryfast","-crf","26",
              "-threads","1","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k",
-             "-movflags","+faststart","-shortest",str(folder/"shorts.mp4")])
+             "-maxrate","2800k","-bufsize","5600k","-movflags","+faststart","-shortest",str(folder/"shorts.mp4")])
         job.update(state=1,progress=100,videos=[f"/files/{task_id}.mp4"],error=""); write_job(job)
     except Exception as exc:
         job.update(state=-1,error=f"{type(exc).__name__}: {str(exc)[:700]}"); write_job(job)
