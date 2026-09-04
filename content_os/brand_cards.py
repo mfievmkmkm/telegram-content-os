@@ -30,6 +30,17 @@ def _lines(text): return [x.strip() for x in plain_text(text).splitlines() if x.
 
 def _hook(lines): return re.sub(r"^[^\wА-Яа-я]+\s*","",lines[0] if lines else "РЫНОК БЕЗ ГРИМА")
 
+def _wrap_pixels(draw,text,current_font,max_width):
+    """Wrap using real font metrics so Cyrillic headlines stay inside the card."""
+    words=str(text).split(); lines=[]; current=""
+    for word in words:
+        candidate=f"{current} {word}".strip()
+        if not current or draw.textbbox((0,0),candidate,font=current_font)[2]<=max_width:
+            current=candidate; continue
+        lines.append(current); current=word
+    if current: lines.append(current)
+    return lines
+
 def _pick_liga_scene(text,seed):
     value=text.lower()
     if any(x in value for x in ("вратар", "голкипер", "сейв", "ворот")): return ("goalkeeper.webp","keeper_flight.webp")[seed%2]
@@ -56,13 +67,17 @@ def _pick_gift_scene(text,seed):
 def _fit(draw,text,box,max_size=72,min_size=34,max_lines=5,bold=True,color=(245,247,250)):
     x,y,w,h=box
     for size in range(max_size,min_size-1,-2):
-        f=font(size,bold); width=max(8,int(w/(size*.58))); wrapped=textwrap.wrap(text,width=width,break_long_words=False)
-        if len(wrapped)<=max_lines and len(wrapped)*int(size*1.18)<=h:
+        f=font(size,bold); wrapped=_wrap_pixels(draw,text,f,w)
+        if len(wrapped)<=max_lines and len(wrapped)*int(size*1.18)<=h and all(draw.textbbox((0,0),line,font=f)[2]<=w for line in wrapped):
             for line in wrapped: draw.text((x,y),line,font=f,fill=color); y+=int(size*1.18)
             return y
-    clipped=textwrap.shorten(text,width=max(35,int(w/min_size*.9)*max_lines),placeholder="…")
-    for line in textwrap.wrap(clipped,width=max(8,int(w/(min_size*.58))),break_long_words=False)[:max_lines]:
-        draw.text((x,y),line,font=font(min_size,bold),fill=color); y+=int(min_size*1.18)
+    f=font(min_size,bold); wrapped=_wrap_pixels(draw,text,f,w); visible=wrapped[:max_lines]
+    if len(wrapped)>max_lines and visible:
+        last=visible[-1]
+        while last and draw.textbbox((0,0),last+"…",font=f)[2]>w: last=last[:-1].rstrip()
+        visible[-1]=last+"…"
+    for line in visible:
+        draw.text((x,y),line,font=f,fill=color); y+=int(min_size*1.18)
     return y
 
 def _brand(draw,accent,label="INTELLIGENCE",channel="gifts"):
@@ -158,8 +173,8 @@ def _cinematic(lines,seed,scene_name,channel="gifts"):
     hook=_hook(lines).upper()
     box=(66,170,565,610); x,y,w,h=box
     for size in range(78,37,-2):
-        f=display_font(size); wrapped=textwrap.wrap(hook,width=max(8,int(w/(size*.51))),break_long_words=False)
-        if len(wrapped)<=6 and len(wrapped)*int(size*1.03)<=h:
+        f=display_font(size); wrapped=_wrap_pixels(draw,hook,f,w)
+        if len(wrapped)<=6 and len(wrapped)*int(size*1.03)<=h and all(draw.textbbox((0,0),line,font=f)[2]<=w for line in wrapped):
             for i,line in enumerate(wrapped):
                 color=accent if i==len(wrapped)-1 and len(wrapped)>1 else (248,249,252)
                 draw.text((x,y),line,font=f,fill=color,stroke_width=2,stroke_fill=(4,5,8)); y+=int(size*1.03)
