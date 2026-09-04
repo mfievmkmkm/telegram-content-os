@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import math
 import os
@@ -107,18 +108,19 @@ def run(command,timeout=900):
         raise RuntimeError(f"FFmpeg exit {result.returncode}: {detail}")
 
 
-async def synthesize(script:str,path:Path,voice:str,rate:str)->str:
+async def synthesize(script:str,path:Path,voice:str,rate:str)->tuple[str,dict|None]:
     """Premium TTS when configured, free Edge voice as a resilient fallback."""
     if ELEVEN_KEY and ELEVEN_VOICE:
-        url=f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE}"
+        url=f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE}/with-timestamps"
         headers={"xi-api-key":ELEVEN_KEY,"Content-Type":"application/json","Accept":"audio/mpeg"}
         body={"text":script,"model_id":ELEVEN_MODEL,"voice_settings":{
             "stability":0.38,"similarity_boost":0.78,"style":0.42,"use_speaker_boost":True,"speed":1.08}}
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
             async with session.post(url,params={"output_format":"mp3_44100_128"},json=body,headers=headers) as response:
                 if response.status<400:
-                    path.write_bytes(await response.read()); return "elevenlabs"
-    await edge_tts.Communicate(script,voice=voice,rate=rate,pitch="+2Hz").save(str(path)); return "edge"
+                    result=await response.json(); path.write_bytes(base64.b64decode(result["audio_base64"]))
+                    return "elevenlabs",result.get("normalized_alignment") or result.get("alignment")
+    await edge_tts.Communicate(script,voice=voice,rate=rate,pitch="+2Hz").save(str(path)); return "edge",None
 
 
 async def render(task_id:str,payload:dict):
@@ -131,12 +133,12 @@ async def render(task_id:str,payload:dict):
         job["progress"]=5; write_job(job)
         voice=str(payload.get("voice_name") or "ru-RU-DmitryNeural")
         rate_value=float(payload.get("voice_rate") or 1.18); rate=f"{round((rate_value-1)*100):+d}%"
-        job["voice_provider"]=await synthesize(script,folder/"voice.mp3",voice,rate); write_job(job)
+        job["voice_provider"],alignment=await synthesize(script,folder/"voice.mp3",voice,rate); write_job(job)
         probe=subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(folder/"voice.mp3")],text=True)
         duration=max(8.0,float(probe.strip())); job["progress"]=20; write_job(job)
         clips=await pexels_clips(unique_terms(payload),folder)
         if len(clips)<3: raise RuntimeError("Pexels вернул меньше трёх пригодных видеоклипов")
-        job["progress"]=45; write_job(job); cut=2.0; count=math.ceil(duration/cut); normalized=[]
+        job["progress"]=45; write_job(job); cut=1.7; count=math.ceil(duration/cut); normalized=[]
         for index in range(count):
             source=clips[index%len(clips)]
             output=folder/f"part-{index}.mp4"
@@ -149,7 +151,7 @@ async def render(task_id:str,payload:dict):
                  "-pix_fmt","yuv420p","-movflags","+faststart",str(output)])
             normalized.append(output); job["progress"]=45+int((index+1)/count*30); write_job(job)
         (folder/"concat.txt").write_text("".join(f"file '{path.name}'\n" for path in normalized),"utf-8")
-        (folder/"subs.ass").write_text(ass_subtitles(script,duration),"utf-8")
+        (folder/"subs.ass").write_text(ass_subtitles(script,duration,alignment),"utf-8")
         run(["ffmpeg","-y","-f","concat","-safe","0","-i",str(folder/"concat.txt"),"-i",str(folder/"voice.mp3"),
              "-vf",f"ass={folder/'subs.ass'}","-c:v","libx264","-preset","veryfast","-crf","26",
              "-threads","1","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k",
