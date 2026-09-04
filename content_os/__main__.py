@@ -330,7 +330,7 @@ async def order_status(c:CallbackQuery):
     if order:
         text=(f"✅ <b>Заявка #{raw_id} взята в работу</b>\n\nСкоро напишем с уточнениями и точной стоимостью"
               if action=="accept" else f"🏁 <b>Заявка #{raw_id} закрыта</b>\n\nЕсли понадобится новый разбор — витрина всегда доступна через /shop")
-        try: await bot.send_message(int(order["user_id"]),text,parse_mode=ParseMode.HTML)
+        try: await (shop_bot or bot).send_message(int(order["user_id"]),text,parse_mode=ParseMode.HTML)
         except Exception: log.info("Could not notify customer for order %s",raw_id)
     await panel_orders(c)
 
