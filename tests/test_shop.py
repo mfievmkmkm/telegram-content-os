@@ -20,3 +20,9 @@ def test_shop_navigation_never_traps_customer():
     assert {"shop:home","shop:category:liga"} <= callbacks
     nav={button.callback_data for row in shop_nav("shop:offer:liga_episode").inline_keyboard for button in row}
     assert nav=={"shop:offer:liga_episode","shop:home"}
+
+
+def test_gifts_subscription_is_a_direct_external_link():
+    button=storefront("vsdvscbot").inline_keyboard[2][0]
+    assert button.callback_data is None
+    assert button.url=="https://t.me/vsdvscbot?start=shop"
