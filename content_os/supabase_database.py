@@ -160,7 +160,10 @@ class SupabaseDatabase:
         return self.client.table("content_os_course_notes").select("text,source_channel").order("id",desc=True).limit(limit).execute().data
 
     def course_stats(self,limit=12):
-        rows=self.client.table("content_os_course_notes").select("source_channel,text").execute().data; grouped={}
+        # The admin panel only needs a useful overview, not an unbounded export of
+        # every lesson.  Capping the scan also keeps the panel responsive once a
+        # large course library has been imported.
+        rows=self.client.table("content_os_course_notes").select("source_channel,text").limit(5000).execute().data; grouped={}
         for row in rows:
             item=grouped.setdefault(row["source_channel"],{"source_channel":row["source_channel"],"count":0,"chars":0})
             item["count"]+=1; item["chars"]+=len(row.get("text") or "")
