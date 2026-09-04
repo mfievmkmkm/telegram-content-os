@@ -13,8 +13,10 @@ FONT="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 DISPLAY_FONT="/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf"
 REGULAR="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 SCENE_DIR=Path(__file__).with_name("assets")/"card_scenes"
-SCENES=("market_phone.webp","alert_vault.webp","liquid_gift.webp","rare_object.webp","fomo_meme.webp","gift_auction.webp","market_whale.webp","fomo_cart.webp")
-LIGA_SCENES=("stadium_tunnel.webp","tactics_lab.webp","night_training.webp","goalkeeper.webp","golden_bench.webp")
+SCENES=("market_phone.webp","alert_vault.webp","liquid_gift.webp","rare_object.webp","fomo_meme.webp","gift_auction.webp","market_whale.webp","fomo_cart.webp",
+        "vault_capsule.webp","crystal_market.webp","auction_strike.webp","gift_terminal.webp","chrome_whale.webp","rare_safe.webp","market_cart.webp")
+LIGA_SCENES=("stadium_tunnel.webp","tactics_lab.webp","night_training.webp","goalkeeper.webp","golden_bench.webp",
+             "sprint_rain.webp","coach_hologram.webp","keeper_flight.webp","empty_bench.webp","duel_fire.webp","tunnel_light.webp","neon_strike.webp")
 
 def font(size,bold=True): return ImageFont.truetype(FONT if bold else REGULAR,size)
 
@@ -30,17 +32,22 @@ def _hook(lines): return re.sub(r"^[^\wА-Яа-я]+\s*","",lines[0] if lines els
 
 def _pick_liga_scene(text,seed):
     value=text.lower()
-    if any(x in value for x in ("вратар", "голкипер", "сейв", "ворот")): return "goalkeeper.webp"
-    if any(x in value for x in ("скамей", "состав", "замен", "запас")): return "golden_bench.webp"
-    if any(x in value for x in ("трениров", "упражнен", "техник", "дриблинг", "конус")): return "night_training.webp"
-    if any(x in value for x in ("тактик", "схем", "позици", "разбор", "эпизод", "зон")): return "tactics_lab.webp"
+    if any(x in value for x in ("вратар", "голкипер", "сейв", "ворот")): return ("goalkeeper.webp","keeper_flight.webp")[seed%2]
+    if any(x in value for x in ("скамей", "состав", "замен", "запас")): return ("golden_bench.webp","empty_bench.webp")[seed%2]
+    if any(x in value for x in ("трениров", "упражнен", "скорост", "рывок", "конус")): return ("night_training.webp","sprint_rain.webp")[seed%2]
+    if any(x in value for x in ("тактик", "схем", "позици", "разбор", "эпизод", "зон")): return ("tactics_lab.webp","coach_hologram.webp")[seed%2]
+    if any(x in value for x in ("удар", "гол", "заверш", "бьёт")): return "neon_strike.webp"
+    if any(x in value for x in ("единобор", "отбор", "контакт", "дуэл")): return "duel_fire.webp"
+    if any(x in value for x in ("дебют", "страх", "давлен", "путь", "характер")): return "tunnel_light.webp"
     return LIGA_SCENES[seed%len(LIGA_SCENES)]
 
 def _pick_gift_scene(text,seed):
     value=text.lower()
-    if any(x in value for x in ("кит", "холдер", "разгруз", "вышел")): return "market_whale.webp"
-    if any(x in value for x in ("аукцион", "торг", "ставк", "покупател")): return "gift_auction.webp"
-    if any(x in value for x in ("fomo", "пик", "корзин", "скуп", "набрал")): return "fomo_cart.webp"
+    if any(x in value for x in ("кит", "холдер", "разгруз", "вышел")): return ("market_whale.webp","chrome_whale.webp")[seed%2]
+    if any(x in value for x in ("аукцион", "торг", "ставк", "покупател")): return ("gift_auction.webp","auction_strike.webp")[seed%2]
+    if any(x in value for x in ("fomo", "пик", "корзин", "скуп", "набрал")): return ("fomo_cart.webp","market_cart.webp")[seed%2]
+    if any(x in value for x in ("редк", "уник", "коллекц", "эксклюзив")): return ("rare_object.webp","rare_safe.webp","vault_capsule.webp")[seed%3]
+    if any(x in value for x in ("график", "рынок", "цена", "floor", "тон")): return ("market_phone.webp","gift_terminal.webp","crystal_market.webp")[seed%3]
     return SCENES[(seed//2)%len(SCENES)]
 
 def _fit(draw,text,box,max_size=72,min_size=34,max_lines=5,bold=True,color=(245,247,250)):
@@ -132,23 +139,14 @@ def _cinematic(lines,seed,scene_name,channel="gifts"):
     detail=textwrap.shorten(detail,width=105,placeholder="…")
     draw.rounded_rectangle((66,825,570,985),24,fill=(7,9,13,230),outline=accent,width=3)
     _fit(draw,detail,(94,852,445,95),28,22,3,False)
-    footer="GIFTS INTELLIGENCE  •  БЕЗ ШУМА" if channel=="gifts" else "LIGA PROGRESS  •  ИГРА УМНЕЕ"
+    footer="GIFTS INTELLIGENCE  •  MARKET DESK" if channel=="gifts" else "LIGA PROGRESS  •  GAME LAB"
     draw.text((70,1025),footer,font=font(18),fill=(178,184,194))
     return image
 
 def gift_card(post_text,format_key="intelligence"):
-    """Ten-layout visual system: five editorial templates and five cinematic scenes."""
+    """Cinematic gift-card pool; legacy flat templates are intentionally disabled."""
     lines=_lines(post_text); digest=hashlib.sha256((format_key+plain_text(post_text)).encode()).hexdigest(); seed=int(digest[:8],16)
-    if seed%2:
-        image=_cinematic(lines,seed,_pick_gift_scene(plain_text(post_text),seed))
-        output=io.BytesIO(); image.save(output,"PNG",optimize=True); return output.getvalue()
-    accents=[(151,255,0),(87,220,255),(195,119,255),(255,191,61),(255,89,105)]; accent=accents[seed%len(accents)]; key=format_key.lower()
-    if "мем" in key or "meme" in key: renderer=_meme
-    elif any(x in key for x in ("data","рынок","signal","market")): renderer=_dashboard
-    elif any(x in key for x in ("ошиб","risk","audit","autopsy","скам")): renderer=_dossier
-    elif any(x in key for x in ("обуч","education","гайд")): renderer=_editorial
-    else: renderer=_spotlight
-    image=Image.new("RGB",(1080,1080)); draw=ImageDraw.Draw(image); renderer(draw,lines,accent,seed)
+    image=_cinematic(lines,seed,_pick_gift_scene(plain_text(post_text),seed))
     output=io.BytesIO(); image.save(output,"PNG",optimize=True); return output.getvalue()
 
 def liga_card(post_text,format_key="football"):

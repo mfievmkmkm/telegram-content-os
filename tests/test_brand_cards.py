@@ -35,7 +35,9 @@ def test_liga_card_is_a_real_png():
     assert len(data)>10_000
 
 def test_liga_scene_matches_subject():
-    assert _pick_liga_scene("Почему вратарь опоздал с сейвом",1) == "goalkeeper.webp"
-    assert _pick_liga_scene("Как вернуть место в составе после замены",1) == "golden_bench.webp"
-    assert _pick_liga_scene("Упражнение на дриблинг",1) == "night_training.webp"
-    assert _pick_liga_scene("Тактический разбор эпизода",1) == "tactics_lab.webp"
+    assert _pick_liga_scene("Почему вратарь опоздал с сейвом",1) in {"goalkeeper.webp","keeper_flight.webp"}
+    assert _pick_liga_scene("Как вернуть место в составе после замены",1) in {"golden_bench.webp","empty_bench.webp"}
+    assert _pick_liga_scene("Упражнение на скорость и конусы",1) in {"night_training.webp","sprint_rain.webp"}
+    assert _pick_liga_scene("Тактический разбор эпизода",1) in {"tactics_lab.webp","coach_hologram.webp"}
+    assert _pick_liga_scene("Победа в единоборстве",1) == "duel_fire.webp"
+    assert _pick_liga_scene("Как поставить удар",1) == "neon_strike.webp"
