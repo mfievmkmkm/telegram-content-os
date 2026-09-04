@@ -23,7 +23,7 @@ from .history import HistoryImporter
 from .gifts_data import GiftsDataDesk
 from .analytics import AnalyticsCollector
 from .video import VideoFactory
-from .formatting import telegram_html
+from .formatting import plain_text, telegram_html
 from .course_files import extract_course_text, course_chunks
 from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, confidence_legend
@@ -162,7 +162,7 @@ async def publish(draft_id):
     wants_card=(draft["channel_key"]=="gifts" and use_gift_card(draft_id)) or (draft["channel_key"]=="liga" and use_liga_card(draft_id))
     # Telegram photo captions are limited; keep a long editorial post intact and text-only.
     card=gift_card if draft["channel_key"]=="gifts" else liga_card
-    image=card(draft["text"],draft["format_key"]) if wants_card and len(telegram_html(draft["text"]))<900 else None
+    image=card(draft["text"],draft["format_key"]) if wants_card and len(plain_text(draft["text"]))<=1000 else None
     premium_error=None
     if premium_publisher.ready:
         try:
