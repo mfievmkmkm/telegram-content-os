@@ -8,6 +8,7 @@ from .channels import CHANNELS, CONTENT_LANES, FORMAT_ROTATION, FORMAT_RULES, PO
 from .hooks import score_hook
 from .sources import collect_items
 from .formatting import clean_generated_post, decorate_post, plain_text
+from .course_retrieval import select_course_snippets
 
 
 class Editor:
@@ -99,9 +100,9 @@ class Editor:
         return self.db.save_draft("liga","match_radar",text,score,"Match Radar","",None)
 
     async def create_from_courses(self,channel_key):
-        snippets=self.db.course_snippets(10)
-        if not snippets: raise RuntimeError("База курсов пока пуста — сначала запусти /coursesync")
-        knowledge="\n---\n".join(row["text"][:1800] for row in snippets)
+        snippets=select_course_snippets(self.db.course_snippets(200),channel_key,7)
+        if not snippets: raise RuntimeError("База курсов пока пуста — сначала запусти /coursesync или загрузи ZIP")
+        knowledge="\n---\n".join(row["text"][:1300] for row in snippets)
         prompt=("Ниже приватные учебные заметки, к которым владелец имеет доступ. Извлеки ОДИН общий принцип психологии, продаж, внимания или принятия решений. "
                 "Не цитируй, не называй автора или курс, не воспроизводи структуру урока. Полностью переосмысли принцип для аудитории канала. "
                 "Если материал про оффер или продажи, используй только честные элементы: конкретная боль, измеримая ценность, снятие риска и один CTA; не выдумывай дефицит. "
