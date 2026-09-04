@@ -26,7 +26,7 @@ from .video import VideoFactory
 from .formatting import plain_text, telegram_html
 from .course_files import extract_course_text, course_chunks
 from .media import discover_image
-from .matchlens import MatchLensClient, MatchRequest, confidence_legend
+from .matchlens import MatchLensClient, MatchRequest, aggregate_passport, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
 from .shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefront
 from .shop_runtime import create_shop_runtime
@@ -118,11 +118,13 @@ def admin_nav(back_callback="panel:home"):
       InlineKeyboardButton(text="‹ Назад",callback_data=back_callback),
       InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
 
-def match_job_keyboard(local_id,tracker_ids=(),result_url=""):
+def match_job_keyboard(local_id,tracker_ids=(),result_url="",passport_players=()):
     rows=[]; ids=[str(value) for value in tracker_ids if str(value).isdigit()][:24]
     for index in range(0,len(ids),4):
         rows.append([InlineKeyboardButton(text=f"Игрок #{tracker}",callback_data=f"matchpick:{local_id}:{tracker}") for tracker in ids[index:index+4]])
     if result_url: rows.append([InlineKeyboardButton(text="📊 Открыть отчёт",url=result_url)])
+    for player in list(passport_players)[:8]:
+        rows.append([InlineKeyboardButton(text=f"➕ В паспорт: {player['display_name']}",callback_data=f"matchlink:{local_id}:{player['id']}")])
     rows.append([InlineKeyboardButton(text="🔄 Обновить статус",callback_data=f"matchrefresh:{local_id}"),InlineKeyboardButton(text="‹ Футбол",callback_data="panel:football")])
     rows.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -385,7 +387,9 @@ async def player_list(message:Message):
     rows=db.players()
     if not rows: return await message.answer("Профилей пока нет. Создать: <code>/playeradd Имя | год | позиция | нога</code>",parse_mode=ParseMode.HTML)
     lines=[f"#{row['id']} · <b>{html.escape(row['display_name'])}</b> · {html.escape(row['position'] or 'позиция не указана')}" for row in rows[:30]]
-    await message.answer("👤 <b>Player Passports</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML)
+    buttons=[[InlineKeyboardButton(text=f"📈 {row['display_name']}",callback_data=f"passport:{row['id']}")] for row in rows[:20]]
+    buttons.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:players"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    await message.answer("👤 <b>Player Passports</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @router.message(Command("playerlink"))
 async def player_link(message:Message):
@@ -403,20 +407,32 @@ async def player_passport(message:Message):
     if not admin(message): return
     parts=(message.text or "").split()
     if len(parts)!=2 or not parts[1].isdigit(): return await message.answer("Формат: <code>/passport ID_ИГРОКА</code>",parse_mode=ParseMode.HTML)
-    player,matches=db.player_report(int(parts[1]))
-    if not player: return await message.answer("Профиль не найден.")
-    metrics=[]
-    for match in matches:
-        try:
-            value=json.loads(match["metrics_json"] or "null")
-            if value: metrics.append(value)
-        except json.JSONDecodeError: pass
-    if metrics:
-        distance=sum(float(x.get("distance_m",0)) for x in metrics); touches=sum(int(x.get("touches_observed",0)) for x in metrics)
-        speed=max(float(x.get("max_speed_kmh",0)) for x in metrics); coverage=sum(float(x.get("coverage_percent",0)) for x in metrics)/len(metrics)
-        numbers=f"\n\n<b>{len(metrics)} матч.</b> · ≈ {distance/1000:.1f} км в кадре · ≈ {speed:.1f} км/ч максимум\n✅ {touches} наблюдаемых касаний · покрытие {coverage:.0f}%"
+    await show_passport(message,int(parts[1]))
+
+async def show_passport(target,player_id,edit=False):
+    player,matches=db.player_report(player_id)
+    if not player:
+        if edit: return await target.edit_text("Профиль не найден.",reply_markup=admin_nav("panel:players"))
+        return await target.answer("Профиль не найден.",reply_markup=admin_nav("panel:players"))
+    summary=aggregate_passport(matches)
+    if summary:
+        zone={"left":"левый фланг","centre":"центр","right":"правый фланг"}[summary["zone"]]
+        numbers=(f"\n\n<b>Разборов: {summary['count']}</b> · видео: ≈ {summary['video_minutes']:.0f} мин\n"
+                 f"Видимость игрока: ≈ {summary['visibility']:.0f}% · активность в кадре: ≈ {summary['movement']:.1f}\n"
+                 f"Чаще появляется: <b>{zone}</b> · выделено эпизодов: {summary['moments']}\n\n"
+                 "<i>Это координатная видеоаналитика, не GPS и не официальный event-data</i>")
     else: numbers="\n\nМатчи ещё не привязаны или метрики не готовы."
-    await message.answer(f"👤 <b>{html.escape(player['display_name'])}</b>\n{html.escape(player['position'] or 'Позиция не указана')} · {player['birth_year'] or 'год не указан'} · {html.escape(player['strong_foot'] or 'нога не указана')}{numbers}",parse_mode=ParseMode.HTML)
+    text=f"👤 <b>{html.escape(player['display_name'])}</b>\n{html.escape(player['position'] or 'Позиция не указана')} · {player['birth_year'] or 'год не указан'} · {html.escape(player['strong_foot'] or 'нога не указана')}{numbers}"
+    markup=admin_nav("panel:players")
+    if edit: await target.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=markup)
+    else: await target.answer(text,parse_mode=ParseMode.HTML,reply_markup=markup)
+
+@router.callback_query(F.data.startswith("passport:"))
+async def passport_button(c:CallbackQuery):
+    if not admin(c): return
+    raw=c.data.split(":",1)[1]
+    if not raw.isdigit(): return await c.answer("Профиль не найден",show_alert=True)
+    await c.answer(); await show_passport(c.message,int(raw),edit=True)
 
 @router.message(Command("emoji"))
 async def save_premium_emoji(message:Message):
@@ -520,7 +536,8 @@ async def show_match_status(target,local_id,edit=False):
     hint=f"{ids}\n\nНажми на ID своего футболиста ниже" if row["status"]=="awaiting_selection" else ""
     error=f"\nОшибка: {html.escape(row['error'])}" if row["error"] else ""
     text=f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{hint}{error}"
-    markup=match_job_keyboard(row["id"],tracker_ids if row["status"]=="awaiting_selection" else (),row["result_url"] or "")
+    profiles=db.players() if row["status"]=="completed" else ()
+    markup=match_job_keyboard(row["id"],tracker_ids if row["status"]=="awaiting_selection" else (),row["result_url"] or "",profiles)
     if edit: await target.edit_text(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
     else: await target.answer(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
     return row
@@ -551,6 +568,15 @@ async def match_pick_button(c:CallbackQuery):
     try: await matchlens.select_target(int(parts[1]),int(parts[2]))
     except Exception as exc: return await c.message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
     await c.message.edit_text(f"✅ <b>Игрок #{parts[2]} выбран</b>\n\nФинальный отчёт собирается",parse_mode=ParseMode.HTML,reply_markup=match_job_keyboard(int(parts[1])))
+
+@router.callback_query(F.data.startswith("matchlink:"))
+async def match_link_button(c:CallbackQuery):
+    if not admin(c): return
+    parts=c.data.split(":")
+    if len(parts)!=3 or not parts[1].isdigit() or not parts[2].isdigit(): return await c.answer("Некорректная привязка",show_alert=True)
+    player, _=db.player_report(int(parts[2])); match=db.match_job(int(parts[1]))
+    if not player or not match or match["status"]!="completed": return await c.answer("Профиль или готовый разбор не найден",show_alert=True)
+    db.link_player_match(int(parts[2]),int(parts[1])); await c.answer("Добавлено в Player Passport",show_alert=True)
 
 @router.message(Command("matchplayer"))
 async def match_player_select(message:Message):
