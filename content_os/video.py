@@ -26,6 +26,17 @@ SHORTS_RULES = """Создай производственное задание �
 class VideoFactory:
     def __init__(self, settings, database, editor): self.settings,self.db,self.editor=settings,database,editor
 
+    async def probe(self):
+        if not self.settings.mpt_base_url: return False,"URL не задан"
+        headers={"x-api-key":self.settings.mpt_api_key} if self.settings.mpt_api_key else {}
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),headers=headers) as session:
+                async with session.get(self.settings.mpt_base_url+"/health") as response:
+                    data=await response.json(content_type=None)
+                    if response.status>=400 or not data.get("ok"): return False,f"HTTP {response.status}"
+            return True,f"Pexels {'да' if data.get('pexels') else 'НЕТ'} · диск {'да' if data.get('persistent') else 'временный'} · голос {data.get('voice','edge')}"
+        except Exception as exc: return False,f"{type(exc).__name__}: {str(exc)[:120]}"
+
     async def create(self, draft):
         raw=await self.editor.llm(CHANNELS[draft["channel_key"]]["voice"],f"{SHORTS_RULES}\n\nПОСТ:\n{draft['text']}",.95)
         try:
