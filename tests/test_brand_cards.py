@@ -41,3 +41,12 @@ def test_liga_scene_matches_subject():
     assert _pick_liga_scene("Тактический разбор эпизода",1) in {"tactics_lab.webp","coach_hologram.webp"}
     assert _pick_liga_scene("Победа в единоборстве",1) == "duel_fire.webp"
     assert _pick_liga_scene("Как поставить удар",1) == "neon_strike.webp"
+
+def test_meme_cards_use_editorial_meme_scenes(monkeypatch):
+    seen=[]
+    original=_cinematic
+    monkeypatch.setattr("content_os.brand_cards._cinematic",lambda lines,seed,scene,channel="gifts": seen.append((scene,channel)) or original(lines,seed,scene,channel))
+    gift_card("Когда купил вершину и назвал это стратегией","мем")
+    liga_card("Когда тренер сказал разминаться на 89-й","мем")
+    assert seen[0] == ("fomo_meme.webp","gifts")
+    assert seen[1][0] in {"empty_bench.webp","golden_bench.webp"}

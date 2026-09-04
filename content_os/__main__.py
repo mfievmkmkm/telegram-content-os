@@ -1,5 +1,6 @@
 import asyncio
 import html
+import io
 import json
 import logging
 from datetime import datetime, timedelta
@@ -23,6 +24,7 @@ from .gifts_data import GiftsDataDesk
 from .analytics import AnalyticsCollector
 from .video import VideoFactory
 from .formatting import telegram_html
+from .course_files import extract_course_text, course_chunks
 from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, confidence_legend
 from .football import FootballRadar, fixtures_keyboard_rows
@@ -64,6 +66,9 @@ class MatchState(StatesGroup):
 class ShopState(StatesGroup):
     waiting_brief = State()
     waiting_diagnostic = State()
+
+class CourseFileState(StatesGroup):
+    waiting_file = State()
 
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
 
@@ -590,7 +595,7 @@ async def gen_cb(c:CallbackQuery):
       [InlineKeyboardButton(text="🎞 Фирменная серия",callback_data=f"genmode:{channel}:series")]])); await c.answer()
 
 def rubric_keyboard(channel):
-    labels={"история":"🎭 История","антисистема":"🥊 Антисистема","разбор":"🔬 Разбор","тренировка":"🏋️ Тренировка",
+    labels={"короткий_удар":"⚡ Короткий удар","история":"🎭 История","антисистема":"🥊 Антисистема","разбор":"🔬 Разбор","тренировка":"🏋️ Тренировка",
             "новость":"⚡ Новость","рынок_за_минуту":"📊 Рынок","разбор_ошибки":"🧨 Разбор ошибки","обучение":"🧠 Обучение",
             "сигнал_или_шум":"📡 Сигнал/шум","мем":"😏 Мем"}
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=labels.get(fmt,fmt.replace("_"," ").title()),callback_data=f"rubric:{fmt}")]
@@ -660,13 +665,13 @@ async def series_pack(c:CallbackQuery):
     name,fmt,brief=SERIES[channel][key]; await c.answer("Собираю сезон из трёх выпусков…")
     wait=await c.message.answer(f"🎞 <b>{html.escape(name)} · сезон ×3</b>\n\nСоздаю три разных захода без повторов…",parse_mode=ParseMode.HTML)
     arcs=[
-      "Выпуск 1/3. Открой конфликт и сломай привычное убеждение. Не раскрывай всё сразу.",
-      "Выпуск 2/3. Покажи механизм проблемы на конкретной ситуации. Не повторяй хук первого выпуска.",
-      "Выпуск 3/3. Дай практический выход или жёсткий выбор. Заверши сезон сильнее, чем начал.",
+      (fmt,"Выпуск 1/3. Основной выпуск: открой конфликт и сломай привычное убеждение. Не раскрывай всё сразу."),
+      ("мем","Выпуск 2/3. Мем-пауза: покажи ту же проблему как узнаваемую сцену и закончи панчем. Не пересказывай первый выпуск."),
+      ("короткий_удар","Выпуск 3/3. Короткий финал: дай практический выход или жёсткий выбор. Заверши сезон сильнее, чем начал."),
     ]; created=[]
     try:
-        for index,arc in enumerate(arcs,1):
-            draft_id=await editor.create_from_brief(channel,fmt,f"Серия «{name}». {brief}\n{arc}",f"{name} · {index}/3")
+        for index,(episode_format,arc) in enumerate(arcs,1):
+            draft_id=await editor.create_from_brief(channel,episode_format,f"Серия «{name}». {brief}\n{arc}",f"{name} · {index}/3")
             created.append(draft_id); await wait.edit_text(f"🎞 <b>{html.escape(name)}</b>\n\nГотово {index}/3",parse_mode=ParseMode.HTML)
     except Exception as exc:
         log.exception("Series pack failed"); return await wait.edit_text(f"⚠️ Создано {len(created)}/3. Ошибка: {html.escape(str(exc)[:240])}",parse_mode=ParseMode.HTML)
@@ -900,9 +905,36 @@ async def panel_courses(c:CallbackQuery):
     if not admin(c): return
     buttons=[
       [InlineKeyboardButton(text="🔄 Загрузить новые уроки",callback_data="panel:coursesync")],
+      [InlineKeyboardButton(text="📎 Добавить PDF / DOCX / TXT",callback_data="panel:coursefile")],
       [InlineKeyboardButton(text="🎁 Пост для Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="⚽ Пост для Лиги",callback_data="coursemake:liga")],
       [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]
     await c.message.edit_text("📚 <b>Course Intelligence</b>\n\nЧитает только каналы из COURSE_CHANNELS, извлекает идеи и никогда не указывает курс в посте",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
+
+@router.callback_query(F.data=="panel:coursefile")
+async def panel_course_file(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    await state.set_state(CourseFileState.waiting_file); await c.answer()
+    await c.message.answer("📎 Пришли один файл курса: PDF, DOCX, TXT, MD, SRT или VTT — до 20 МБ. Я извлеку только текст и добавлю его в базу знаний")
+
+@router.message(CourseFileState.waiting_file,F.document)
+async def import_course_file(message:Message,state:FSMContext):
+    if not admin(message): return
+    document=message.document; size=int(document.file_size or 0)
+    if size>20*1024*1024: return await message.answer("Файл больше 20 МБ. Раздели его на части или пришли текстовую версию")
+    wait=await message.answer("🧠 Извлекаю текст и режу на смысловые части…")
+    try:
+        buffer=io.BytesIO(); await bot.download(document.file_id,destination=buffer)
+        text=extract_course_text(document.file_name or "course.txt",buffer.getvalue()); chunks=course_chunks(text)
+        source=f"upload:{(document.file_name or 'course')[:180]}"; added=0
+        for index,chunk in enumerate(chunks):
+            added+=db.save_course_note(source,message.message_id*1000+index,chunk,message.date.isoformat() if message.date else None)
+        await state.clear(); await wait.edit_text(f"✅ <b>Курс добавлен</b>\n\nИзвлечено: {len(text):,} знаков\nСохранено частей: {added}/{len(chunks)}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+    except Exception as exc:
+        await wait.edit_text(f"❌ Не прочитал файл: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+
+@router.message(CourseFileState.waiting_file)
+async def import_course_file_invalid(message:Message):
+    if admin(message): await message.answer("Нужен именно файл PDF, DOCX, TXT, MD, SRT или VTT")
 
 @router.callback_query(F.data=="panel:coursesync")
 async def panel_course_sync(c:CallbackQuery):

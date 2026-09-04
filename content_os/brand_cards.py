@@ -38,6 +38,7 @@ def _pick_liga_scene(text,seed):
     if any(x in value for x in ("тактик", "схем", "позици", "разбор", "эпизод", "зон")): return ("tactics_lab.webp","coach_hologram.webp")[seed%2]
     if any(x in value for x in ("удар", "гол", "заверш", "бьёт")): return "neon_strike.webp"
     if any(x in value for x in ("единобор", "отбор", "контакт", "дуэл")): return "duel_fire.webp"
+    if any(x in value for x in ("мем", "пов", "когда", "тренер сказал", "лицо")): return ("empty_bench.webp","golden_bench.webp")[seed%2]
     if any(x in value for x in ("дебют", "страх", "давлен", "путь", "характер")): return "tunnel_light.webp"
     return LIGA_SCENES[seed%len(LIGA_SCENES)]
 
@@ -146,11 +147,13 @@ def _cinematic(lines,seed,scene_name,channel="gifts"):
 def gift_card(post_text,format_key="intelligence"):
     """Cinematic gift-card pool; legacy flat templates are intentionally disabled."""
     lines=_lines(post_text); digest=hashlib.sha256((format_key+plain_text(post_text)).encode()).hexdigest(); seed=int(digest[:8],16)
-    image=_cinematic(lines,seed,_pick_gift_scene(plain_text(post_text),seed))
+    scene="fomo_meme.webp" if format_key=="мем" else _pick_gift_scene(plain_text(post_text),seed)
+    image=_cinematic(lines,seed,scene)
     output=io.BytesIO(); image.save(output,"PNG",optimize=True); return output.getvalue()
 
 def liga_card(post_text,format_key="football"):
     """Cinematic football card pool with deterministic story-based rotation."""
     lines=_lines(post_text); digest=hashlib.sha256(("liga"+format_key+plain_text(post_text)).encode()).hexdigest(); seed=int(digest[:8],16)
-    image=_cinematic(lines,seed,_pick_liga_scene(plain_text(post_text),seed),"liga")
+    scene=("empty_bench.webp","golden_bench.webp")[seed%2] if format_key=="мем" else _pick_liga_scene(plain_text(post_text),seed)
+    image=_cinematic(lines,seed,scene,"liga")
     output=io.BytesIO(); image.save(output,"PNG",optimize=True); return output.getvalue()

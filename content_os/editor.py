@@ -4,7 +4,7 @@ import html
 import random
 
 import aiohttp
-from .channels import CHANNELS, POST_RULES
+from .channels import CHANNELS, FORMAT_RULES, POST_RULES
 from .hooks import score_hook
 from .sources import collect_items
 from .formatting import clean_generated_post, decorate_post, plain_text
@@ -31,9 +31,13 @@ class Editor:
             if item["url"] and hashlib.sha256(item["url"].encode()).hexdigest() not in used: return item
         return {"title":random.choice(CHANNELS[channel_key]["topics"]),"url":"","summary":""}
 
+    @staticmethod
+    def format_rule(format_key):
+        return FORMAT_RULES.get(format_key,"350–700 знаков. Один сильный угол, без воды и повторов.")
+
     async def create(self, channel_key):
         cfg, material = CHANNELS[channel_key], await self.material(channel_key)
-        format_key = random.choice(cfg["formats"])
+        format_key = random.choices(cfg["formats"],weights=cfg.get("format_weights"),k=1)[0]
         facts = (f"Заголовок: {material['title']}\nФрагмент: {material['summary']}\n"
                  f"Источник: {material.get('source_name','internet')} · рейтинг {material.get('score','—')}\nURL: {material['url']}") if material["url"] else f"Тема: {material['title']}"
         examples=[row["text"][:1000] for row in self.db.style_examples(channel_key)]
@@ -47,7 +51,7 @@ class Editor:
         insights=self.db.editorial_insights(channel_key)
         learned=("\n\nНАША СТАТИСТИКА: лучше всего работают "+", ".join(f"{x['format_key']} (ER {x['avg_er']:.2f}%, {x['samples']} пост.)" for x in insights)+
                  ". Это ориентир для ритма и угла, но не повод повторять тему.") if insights else ""
-        prompt = f"Рубрика: {format_key}. Создай оригинальный пост.\n{facts}{style}{trends}{learned}"
+        prompt = f"Рубрика: {format_key}. Формат: {self.format_rule(format_key)} Создай оригинальный пост.\n{facts}{style}{trends}{learned}"
         text = clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt))
         score, reasons = score_hook(plain_text(text))
         if score < 3:
@@ -64,7 +68,7 @@ class Editor:
                       "rewrite":"Полностью другой заход и структура. Сохрани факты.",
                       "short":"Сократи до 500–700 знаков, оставь ударные мысли."}
         text=clean_generated_post(await self.llm(CHANNELS[draft["channel_key"]]["voice"]+POST_RULES,
-                            f"{instructions[mode]} Верни только пост.\n\n{draft['text']}"))
+                            f"{instructions[mode]} Сохрани характер рубрики: {self.format_rule(draft['format_key'])} Верни только пост.\n\n{draft['text']}"))
         text=decorate_post(text,draft["channel_key"])
         return text, score_hook(plain_text(text))[0]
 
@@ -96,14 +100,16 @@ class Editor:
         if not snippets: raise RuntimeError("База курсов пока пуста — сначала запусти /coursesync")
         knowledge="\n---\n".join(row["text"][:1800] for row in snippets)
         prompt=("Ниже приватные учебные заметки, к которым владелец имеет доступ. Извлеки ОДИН общий принцип психологии, продаж, внимания или принятия решений. "
-                "Не цитируй, не называй автора или курс, не воспроизводи структуру урока. Полностью переосмысли принцип для аудитории канала.\n\n"+knowledge)
+                "Не цитируй, не называй автора или курс, не воспроизводи структуру урока. Полностью переосмысли принцип для аудитории канала. "
+                "Если материал про оффер или продажи, используй только честные элементы: конкретная боль, измеримая ценность, снятие риска и один CTA; не выдумывай дефицит. "
+                f"Формат: {self.format_rule('course_insight')}\n\n"+knowledge)
         cfg=CHANNELS[channel_key]; text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.86)); score,_=score_hook(plain_text(text)); text=decorate_post(text,channel_key)
         return self.db.save_draft(channel_key,"course_insight",text,score,"Course Intelligence","",None)
 
     async def create_from_brief(self,channel_key,format_key,brief,title="Своя тема",url=""):
         cfg=CHANNELS[channel_key]; examples=[row["text"][:1000] for row in self.db.style_examples(channel_key)]
         style=("\n\nНАШ РИТМ — не копируй фразы:\n---\n"+"\n---\n".join(examples)) if examples else ""
-        prompt=(f"Рубрика: {format_key}. Создай оригинальный пост по редакторскому заданию. "
+        prompt=(f"Рубрика: {format_key}. Требования к объёму и структуре: {self.format_rule(format_key)} Создай оригинальный пост по редакторскому заданию. "
                 "Если в задании мало фактов, не додумывай цифры и цитаты: сделай мнение, практический разбор или вопрос.\n\n"
                 f"ЗАДАНИЕ:\n{brief[:8000]}{style}")
         text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.88)); score,reasons=score_hook(plain_text(text))
