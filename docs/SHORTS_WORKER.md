@@ -27,8 +27,10 @@ ELEVENLABS_VOICE_ID=...
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 ```
 
-Without them the worker uses the free Microsoft Edge voice. If ElevenLabs is temporarily
-unavailable, rendering continues with Edge instead of losing the whole video task.
+With ElevenLabs the worker uses character-level speech timings for subtitles, so phrases change
+with the real voice instead of an estimated timer. Without these variables it uses the free
+Microsoft Edge voice. If ElevenLabs is temporarily unavailable, rendering continues with Edge
+and the editor bot explicitly marks the MP4 as a fallback render.
 
 Generate a public Railway domain and copy it to the main Content OS service:
 
