@@ -19,6 +19,17 @@ SHORTS_API_KEY=use-one-long-random-secret
 SHORTS_DATA_DIR=/data
 ```
 
+For a much more natural voice, add optional ElevenLabs variables to the worker:
+
+```env
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=...
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+```
+
+Without them the worker uses the free Microsoft Edge voice. If ElevenLabs is temporarily
+unavailable, rendering continues with Edge instead of losing the whole video task.
+
 Generate a public Railway domain and copy it to the main Content OS service:
 
 ```env
