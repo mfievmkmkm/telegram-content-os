@@ -215,3 +215,7 @@ class Database:
 
     def course_snippets(self,limit=12):
         with self.connect() as db: return db.execute("SELECT text,source_channel FROM course_notes ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
+
+    def course_stats(self,limit=12):
+        with self.connect() as db:
+            return db.execute("SELECT source_channel,COUNT(*) count,SUM(LENGTH(text)) chars FROM course_notes GROUP BY source_channel ORDER BY count DESC LIMIT ?",(limit,)).fetchall()
