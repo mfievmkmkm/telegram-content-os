@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -7,6 +8,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 from .analytics import reaction_count
+from .course_files import SUPPORTED, course_chunks, extract_course_files
 
 
 HISTORY_SOURCES = [
@@ -117,8 +119,20 @@ class HistoryImporter:
                     entity=int(channel) if channel.lstrip("-").isdigit() else channel
                     async for message in client.iter_messages(entity,limit=self.settings.course_import_limit):
                         text=(message.message or "").strip()
-                        if len(text)<80: continue
-                        found+=1; added+=self.db.save_course_note(channel,message.id,text[:12000],message.date.isoformat() if message.date else None)
+                        date=message.date.isoformat() if message.date else None; imported=False
+                        if len(text)>=80:
+                            found+=1; imported=True; added+=self.db.save_course_note(channel,message.id,text[:12000],date)
+                        filename=getattr(getattr(message,"file",None),"name",None) or ""
+                        size=int(getattr(getattr(message,"file",None),"size",0) or 0)
+                        if message.document and Path(filename).suffix.lower() in SUPPORTED|{".zip"} and size<=20*1024*1024:
+                            try:
+                                blob=await client.download_media(message,file=bytes)
+                                for file_index,(inner_name,body) in enumerate(extract_course_files(filename,blob)):
+                                    for chunk_index,chunk in enumerate(course_chunks(body)):
+                                        note_id=message.id*1_000_000+file_index*1_000+chunk_index
+                                        added+=self.db.save_course_note(f"{channel}:{inner_name[:120]}",note_id,chunk,date)
+                                if not imported: found+=1
+                            except Exception: pass
                     results.append(ImportResult(channel,"course",found,added))
                 except Exception as exc: results.append(ImportResult(channel,"course",found,added,str(exc)[:120]))
         finally: await client.disconnect()
