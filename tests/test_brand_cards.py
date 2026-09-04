@@ -1,8 +1,8 @@
 import io
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from content_os.brand_cards import LIGA_SCENES, SCENES, _cinematic, _pick_liga_scene, gift_card, liga_card, use_gift_card
+from content_os.brand_cards import LIGA_SCENES, SCENES, _cinematic, _pick_liga_scene, _wrap_pixels, font, gift_card, liga_card, use_gift_card
 
 def test_gift_card_is_a_real_png():
     data=gift_card("💎 <b>Твой floor врёт тебе</b>\n\nЛиквидность важнее редкости","разбор_ошибки")
@@ -47,3 +47,9 @@ def test_meme_cards_use_distinct_editorial_layouts():
     liga=liga_card("Когда тренер сказал разминаться на 89-й","мем")
     assert gift.startswith(b"\x89PNG") and liga.startswith(b"\x89PNG")
     assert gift != liga
+
+def test_pixel_wrapper_never_overflows_cyrillic_card_width():
+    draw=ImageDraw.Draw(Image.new("RGB",(1080,1080))); current_font=font(58)
+    lines=_wrap_pixels(draw,"Ты открылся правильно, но мяч всё равно снова ушёл назад",current_font,500)
+    assert len(lines)>1
+    assert all(draw.textbbox((0,0),line,font=current_font)[2]<=500 for line in lines)
