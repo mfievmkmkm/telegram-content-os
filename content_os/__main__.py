@@ -879,8 +879,8 @@ async def create_shorts(c:CallbackQuery):
 async def status(message:Message):
     if not admin(message): return
     counts="\n".join(f"@{r['source_channel']} ({r['source_role']}): {r['count']}" for r in db.import_counts()) or "история ещё не загружена"
-    health=await premium_health()
-    await message.answer(f"AI: {'готов' if settings.llm_key else 'нет ключа'}\n⚽ {settings.channels['liga']}\n🎁 {settings.channels['gifts']}\n🎥 MatchLens: {'готов' if matchlens.ready else 'НЕ РАБОТАЕТ — нет видеосервиса'}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n🛒 Магазин: {html.escape(shop_health())}\n\n<b>Проверка Premium-публикации:</b>\n{html.escape(health)}\nАвтопубликация: {'да' if settings.auto_publish else 'нет'}\n\n<b>Память:</b>\n{counts}",parse_mode=ParseMode.HTML)
+    health=await premium_health(); match_ok,match_detail=await matchlens.probe(); shorts_ok,shorts_detail=await videos.probe()
+    await message.answer(f"AI: {'готов' if settings.llm_key else 'нет ключа'}\n⚽ {settings.channels['liga']}\n🎁 {settings.channels['gifts']}\n🎥 MatchLens: {'✅' if match_ok else '❌'} {html.escape(match_detail)}\n🎬 Shorts: {'✅' if shorts_ok else '❌'} {html.escape(shorts_detail)}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n🛒 Магазин: {html.escape(shop_health())}\n\n<b>Проверка Premium-публикации:</b>\n{html.escape(health)}\nАвтопубликация: {'да' if settings.auto_publish else 'нет'}\n\n<b>Память:</b>\n{counts}",parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data=="panel:games")
 async def panel_games(c:CallbackQuery):
@@ -969,10 +969,10 @@ async def panel_status(c:CallbackQuery):
     if not admin(c): return
     await c.answer("Проверяю реальные подключения…")
     counts="\n".join(f"@{r['source_channel']}: {r['count']}" for r in db.import_counts()) or "история ещё не загружена"
-    health=await premium_health()
+    health=await premium_health(); match_ok,match_detail=await matchlens.probe(); shorts_ok,shorts_detail=await videos.probe()
     text=(f"🟢 <b>Состояние системы</b>\n\nAI: {'готов' if settings.llm_key else 'нет ключа'}\n"
-          f"🎥 MatchLens: {'готов' if matchlens.ready else 'не подключён'}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n🛒 Магазин: {html.escape(shop_health())}\n"
-          f"🧬 Полный Telegram-парсер: {'готов' if history.mtproto_ready else 'публичный режим'}\n✨ <b>Premium:</b>\n{html.escape(health)}\n🎬 Shorts: {'настроен, но требует теста' if settings.mpt_base_url else 'не подключён'}\n"
+          f"🎥 MatchLens: {'✅' if match_ok else '❌'} {html.escape(match_detail)}\n🎬 Shorts: {'✅' if shorts_ok else '❌'} {html.escape(shorts_detail)}\n📡 Match Radar: {'готов' if football.ready else 'нет API-ключа'}\n🛒 Магазин: {html.escape(shop_health())}\n"
+          f"🧬 Полный Telegram-парсер: {'готов' if history.mtproto_ready else 'публичный режим'}\n✨ <b>Premium:</b>\n{html.escape(health)}\n"
           f"Автопубликация: {'да' if settings.auto_publish else 'нет'}\n\n<b>Память:</b>\n{counts}")
     await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=back_menu())
 
