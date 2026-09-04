@@ -8,10 +8,14 @@ import aiohttp
 from .channels import CHANNELS
 from .formatting import plain_text
 
-SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 25–36 секунд.
+SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 22–30 секунд.
 Первая фраза должна остановить скролл за 2 секунды: боль, конфликт, абсурд или опасное заблуждение.
-Никаких приветствий. Озвучка — 60–80 слов, разговорный русский, без пустых фраз.
-Каждые 2–5 секунд меняется визуальный акцент. Крупный экранный текст — максимум 6 слов.
+Никаких приветствий. Озвучка — 48–62 слова, разговорный русский, короткими фразами без канцелярита.
+Это не пересказ поста: перепиши мысль как живой монолог. Каждые 1.5–2.2 секунды новый визуальный удар.
+Крупный экранный текст — максимум 4 слова. Заверши коротким вопросом или действием без точки.
+Каждое предложение — 4–10 слов, максимум одна запятая. Запрещены литературные метафоры,
+повторы одной мысли и псевдодрама вроде «земля уходит из-под ног», «ты уже проиграл» или
+«в этот момент всё меняется». Нужны конкретная ситуация, узнаваемая деталь и практический вывод.
 Для футбола не проси кадры защищённых трансляций: тренировка, поле, раздевалка, схемы, силуэты.
 Для Gifts используй интерфейсные макеты, подарки, графики, TON и тёмный неон; не выдумывай цены.
 Верни СТРОГО JSON без markdown:
@@ -98,13 +102,15 @@ class VideoFactory:
         }
         suggested=[str(scene.get("visual","")).strip() for scene in data["scenes"] if scene.get("visual")]
         terms=[]
-        for term in broad.get(data.get("channel"),broad["liga"])+suggested[:2]:
+        # Specific scene prompts first; broad stock queries are only a fallback.
+        for term in suggested+broad.get(data.get("channel"),broad["liga"]):
             if term and term.lower() not in {item.lower() for item in terms}: terms.append(term)
         return {
             "video_subject":data["title"], "video_script":self.voice_script(data["voiceover"]),
             "video_terms":terms[:7], "video_aspect":"9:16", "video_source":"pexels",
             "video_concat_mode":"random", "video_transition_mode":"None", "video_clip_duration":4, "video_count":1,
-            "voice_name":self.settings.mpt_voice_name, "voice_rate":1.13, "subtitle_enabled":True,
+            "voice_name":self.settings.mpt_voice_name, "voice_rate":1.18, "subtitle_enabled":True,
+            "brand_channel":data.get("channel","liga"), "hook_text":data.get("hook",""), "cta_text":data.get("cta",""),
             "subtitle_position":"custom", "custom_position":76.0,
             "font_name":"DejaVuSans-Bold.ttf", "font_size":52,
             "text_fore_color":"#FFFFFF", "text_background_color":"#000000",
@@ -118,7 +124,7 @@ class VideoFactory:
         """Give neural TTS natural phrasing without dramatic synthetic pauses."""
         text=plain_text(str(value or ""))
         text=re.sub(r"[\r\n]+"," ",text)
-        text=text.replace("—",",").replace("–",",")
+        text=text.replace("—"," ").replace("–"," ")
         text=re.sub(r"\.{2,}",".",text)
         text=re.sub(r"\s*[,;:]\s*",", ",text)
         text=re.sub(r",(?:\s*,)+",",",text)
@@ -154,7 +160,7 @@ class VideoFactory:
         if missing: raise ValueError(f"Shorts JSON: нет полей {', '.join(sorted(missing))}")
         if not isinstance(data["scenes"],list) or not 5<=len(data["scenes"])<=10: raise ValueError("Shorts должен содержать 5–10 сцен")
         duration=sum(int(scene.get("seconds",0)) for scene in data["scenes"])
-        if not 25<=duration<=48: raise ValueError(f"Некорректная длительность: {duration} сек")
+        if not 22<=duration<=34: raise ValueError(f"Некорректная длительность: {duration} сек")
 
     @staticmethod
     def fallback(draft):
@@ -162,7 +168,7 @@ class VideoFactory:
         text=plain_text(draft.get("text","")).strip()
         lines=[line.strip() for line in text.splitlines() if line.strip()]
         hook=(lines[0] if lines else "Остановись: здесь есть деталь, которую все пропускают")[:120]
-        words=text.split(); voiceover=" ".join(words[:80])
+        words=text.split(); voiceover=" ".join(words[:62])
         if len(voiceover.split())<35:
             voiceover=(voiceover+" Главное — не верить первому впечатлению. Посмотри на причину, проверь факты и только потом делай вывод.").strip()
         if draft.get("channel_key")=="gifts":
@@ -171,6 +177,6 @@ class VideoFactory:
         else:
             visuals=["football player training alone","football boots close up","soccer tactical board","player sprint training","empty stadium tunnel","coach observing practice","football field sunset"]
             mood="energetic sports tension"
-        scenes=[{"seconds":5,"visual":visual,"screen_text":([hook,"Смотри глубже","Вот где ошибка","Решает деталь","Без оправданий","Проверь себя","А ты согласен?"][i])[:45]} for i,visual in enumerate(visuals)]
+        scenes=[{"seconds":4,"visual":visual,"screen_text":([hook,"Смотри глубже","Вот где ошибка","Решает деталь","Без оправданий","Проверь себя","А ты согласен?"][i])[:45]} for i,visual in enumerate(visuals)]
         return {"title":hook[:70],"hook":hook,"voiceover":voiceover,"scenes":scenes,
                 "caption":text[:900],"music_mood":mood,"cta":lines[-1][:120] if lines else "А ты согласен?"}
