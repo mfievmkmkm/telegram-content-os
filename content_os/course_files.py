@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import io
 import re
+import zipfile
 from pathlib import Path
 
 
 SUPPORTED={".pdf",".docx",".txt",".md",".srt",".vtt"}
+ARCHIVES={".zip"}
 
 
 def extract_course_text(filename:str,data:bytes)->str:
@@ -36,3 +38,20 @@ def course_chunks(text:str,limit:int=8000)->list[str]:
             current=f"{current}\n\n{piece}".strip()
     if current: chunks.append(current)
     return chunks
+
+
+def extract_course_files(filename:str,data:bytes,max_files:int=120,max_uncompressed:int=50*1024*1024)->list[tuple[str,str]]:
+    """Read one course file or a safe in-memory ZIP without extracting paths to disk."""
+    if Path(filename).suffix.lower() not in ARCHIVES: return [(filename,extract_course_text(filename,data))]
+    result=[]
+    try: archive=zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc: raise ValueError("Архив ZIP повреждён или имеет неизвестный формат") from exc
+    files=[item for item in archive.infolist() if not item.is_dir() and Path(item.filename).suffix.lower() in SUPPORTED]
+    if len(files)>max_files: raise ValueError(f"В архиве больше {max_files} поддерживаемых файлов")
+    if sum(item.file_size for item in files)>max_uncompressed: raise ValueError("Распакованный текст архива больше 50 МБ")
+    for item in files:
+        if item.file_size>20*1024*1024: continue
+        try: result.append((Path(item.filename).name,extract_course_text(item.filename,archive.read(item))))
+        except (ValueError,KeyError,RuntimeError): continue
+    if not result: raise ValueError("В ZIP не найдено читаемых PDF, DOCX, TXT, MD, SRT или VTT")
+    return result
