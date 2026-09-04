@@ -40,6 +40,15 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         await state.clear(); payload=(message.text or "").partition(" ")[2].strip()
         source="liga_post" if payload=="service_liga" else "gifts_post" if payload=="service_gifts" else "direct"
         await state.update_data(shop_source=source); track(message.from_user.id,"landing",source)
+        if payload=="service_gifts":
+            username=settings.gifts_subscription_bot_username or "vsdvscbot"
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start=shop")],
+                [InlineKeyboardButton(text="🏠 Весь магазин",callback_data="shop:home")],
+            ])
+            return await message.answer("<b>GIFTS INTELLIGENCE</b>\n\nСигналы, рыночные разборы и доступ к закрытому продукту находятся в подписочном боте",parse_mode=ParseMode.HTML,reply_markup=keyboard)
+        if payload=="service_liga":
+            return await message.answer("<b>LIGA PROGRESS · ИГРОВАЯ ЛАБОРАТОРИЯ</b>\n\nВыбери, какой результат нужен по твоей игре",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("liga"))
         await message.answer(HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard())
 
     @router.callback_query(F.data=="shop:home")
@@ -48,7 +57,8 @@ def create_shop_runtime(settings,db,editor,admin_bot):
 
     @router.callback_query(F.data.startswith("shop:category:"))
     async def category(c:CallbackQuery,state:FSMContext):
-        await state.clear()
+        current=await state.get_data(); source=current.get("shop_source","direct")
+        await state.clear(); await state.update_data(shop_source=source)
         key=c.data.rsplit(":",1)[-1]
         if key not in {"liga","services"}: return await c.answer("Раздел не найден",show_alert=True)
         if key=="liga":
@@ -77,12 +87,12 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         current=await state.get_data(); await state.set_state(ClientState.waiting_brief)
         await state.update_data(offer_key=key,shop_source=current.get("shop_source","direct"))
         prompt="Пришли видео или ссылку и напиши позицию игрока" if OFFERS[key].category=="liga" else "Опиши задачу, площадку и какой результат хочешь получить"
-        await c.message.edit_text(f"<b>Заявка · {html.escape(OFFERS[key].title)}</b>\n\n{prompt}\n\nМожно отправить текст, ссылку или файл одним сообщением",parse_mode=ParseMode.HTML,reply_markup=shop_nav(f"shop:offer:{key}")); await c.answer()
+        await c.message.edit_text(f"<b>Заявка · {html.escape(OFFERS[key].title)}</b>\n\n{prompt}\n\nК файлу обязательно добавь короткую подпись с задачей",parse_mode=ParseMode.HTML,reply_markup=shop_nav(f"shop:offer:{key}")); await c.answer()
 
     @router.message(ClientState.waiting_brief)
     async def brief(message:Message,state:FSMContext):
         value=(message.text or message.caption or "").strip()
-        if len(value)<5: return await message.answer("Опиши задачу чуть подробнее")
+        if len(value)<5: return await message.answer("Добавь к файлу подпись или опиши задачу хотя бы одним предложением")
         data=await state.get_data(); key=data.get("offer_key",""); item=OFFERS.get(key)
         if not item: await state.clear(); return await message.answer("Открой /start и выбери услугу заново")
         username=message.from_user.username or ""
@@ -92,6 +102,11 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         if admin_chat:
             contact=f"@{username}" if username else f"ID <code>{message.from_user.id}</code>"
             await admin_bot.send_message(int(admin_chat),f"<b>Новая заявка #{order_id}</b>\n\n{html.escape(item.title)} · {html.escape(item.price)}\nКлиент: {contact}\n\n{html.escape(value)}",parse_mode=ParseMode.HTML)
+            if message.document or message.video or message.photo or message.audio or message.voice:
+                try:
+                    await shop_bot.forward_message(int(admin_chat),message.chat.id,message.message_id)
+                except Exception:
+                    await admin_bot.send_message(int(admin_chat),"⚠️ В заявке есть вложение. Если оно не показалось здесь, открой диалог с клиентом по контакту выше")
         track(message.from_user.id,"order_created",data.get("shop_source","direct"),key); await state.clear()
         await message.answer(f"<b>Заявка #{order_id} принята</b>\n\nСначала посмотрим материал и уточним результат. Только потом подтвердим цену",parse_mode=ParseMode.HTML,reply_markup=home_keyboard())
 
