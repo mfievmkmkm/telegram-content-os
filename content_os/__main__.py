@@ -805,7 +805,7 @@ async def create_shorts(c:CallbackQuery):
     try:
         job_id,data,_,_=await videos.create(db.draft(draft_id))
         if not settings.mpt_base_url:
-            return await c.message.answer("🎬 Сценарий готов, но видеосервер MoneyPrinterTurbo ещё не подключён. После его развёртывания здесь будет приходить готовый MP4 — технический JSON больше не показываю.")
+            return await c.message.answer("🎬 Сценарий готов, но отдельный Shorts Worker ещё не подключён. После его развёртывания здесь будет приходить готовый MP4 — технический JSON больше не показываю.")
         status=await c.message.answer("🎬 <b>Собираю Shorts: 0%</b>\nПодбираю кадры, озвучку и субтитры…",parse_mode=ParseMode.HTML)
         async def progress(value):
             try: await status.edit_text(f"🎬 <b>Собираю Shorts: {value}%</b>\nПодбираю кадры, озвучку и субтитры…",parse_mode=ParseMode.HTML)

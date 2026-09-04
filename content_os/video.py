@@ -44,20 +44,20 @@ class VideoFactory:
         if self.settings.mpt_webhook_url:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                 async with session.post(self.settings.mpt_webhook_url,json=data) as response:
-                    if response.status>=400: raise RuntimeError(f"MoneyPrinterTurbo adapter HTTP {response.status}")
+                    if response.status>=400: raise RuntimeError(f"Shorts webhook HTTP {response.status}")
                     delivered=True
         return job_id,data,payload,delivered
 
     async def render(self,data,progress=None):
-        """Submit a production job to MoneyPrinterTurbo and return the finished MP4."""
+        """Submit a production job to a compatible persistent Shorts Worker."""
         if not self.settings.mpt_base_url:
-            raise RuntimeError("Видеосервер MoneyPrinterTurbo ещё не подключён")
+            raise RuntimeError("Shorts Worker ещё не подключён")
         headers={"x-api-key":self.settings.mpt_api_key} if self.settings.mpt_api_key else {}
         body=self.mpt_payload(data)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90),headers=headers) as session:
             created=await self._request_json(session,"POST","/api/v1/videos",json=body)
             task_id=str(self._data(created).get("task_id","")).strip()
-            if not task_id: raise RuntimeError("MoneyPrinterTurbo не вернул task_id")
+            if not task_id: raise RuntimeError("Shorts Worker не вернул task_id")
             deadline=asyncio.get_running_loop().time()+self.settings.mpt_timeout_minutes*60
             last_progress=-1
             while asyncio.get_running_loop().time()<deadline:
@@ -79,7 +79,7 @@ class VideoFactory:
                 if state<0:
                     error=str(status.get("error") or "рендер завершился с ошибкой")[:500]
                     if "combined-1.mp4" in error or "FileNotFoundError" in error:
-                        raise RuntimeError("MoneyPrinterTurbo не получил видеоклипы от Pexels. Проверь PEXELS_API_KEY в Shorts Worker и его логи")
+                        raise RuntimeError("Shorts Worker не получил видеоклипы от Pexels. Проверь PEXELS_API_KEY и его логи")
                     raise RuntimeError(error)
                 output=status.get("videos") or status.get("combined_videos") or []
                 if state==1 and output:
@@ -127,7 +127,7 @@ class VideoFactory:
     async def _request_json(self,session,method,path,**kwargs):
         async with session.request(method,self.settings.mpt_base_url+path,**kwargs) as response:
             body=await response.text()
-            if response.status>=400: raise RuntimeError(f"MoneyPrinterTurbo HTTP {response.status}: {body[:240]}")
+            if response.status>=400: raise RuntimeError(f"Shorts Worker HTTP {response.status}: {body[:240]}")
             return json.loads(body)
 
     @staticmethod
