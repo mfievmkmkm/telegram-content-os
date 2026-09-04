@@ -7,3 +7,4 @@ def test_fixture_buttons_keep_api_id():
     rows=fixtures_keyboard_rows(fixtures)
     assert rows[0][1] == 123
     assert rows[0][0].startswith("20:30")
+    assert not rows[0][0].endswith("· ")

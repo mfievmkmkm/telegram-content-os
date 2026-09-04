@@ -32,8 +32,16 @@ def telegram_html(value: str,custom_emojis:dict[str,str]|None=None) -> str:
             escaped,
             flags=re.IGNORECASE,
         )
-    for fallback,emoji_id in (custom_emojis or {}).items():
-        if emoji_id.isdigit(): escaped=escaped.replace(fallback,f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>')
+    replacements={}
+    for index,(fallback,emoji_id) in enumerate((custom_emojis or {}).items()):
+        base=fallback.replace("\ufe0f","")
+        if not (base and emoji_id.isdigit()): continue
+        def custom_tag(match):
+            token=f"__CUSTOM_EMOJI_{index}_{len(replacements)}__"
+            replacements[token]=f'<tg-emoji emoji-id="{emoji_id}">{match.group(0)}</tg-emoji>'
+            return token
+        escaped=re.sub(re.escape(base)+"\ufe0f?",custom_tag,escaped)
+    for token,tag in replacements.items(): escaped=escaped.replace(token,tag)
     return escaped
 
 

@@ -11,6 +11,7 @@ def csv(name: str, default: str) -> list[str]:
 class Settings:
     bot_token: str
     shop_bot_token: str
+    gifts_subscription_bot_username: str
     admins: frozenset[str]
     llm_key: str
     llm_url: str
@@ -54,6 +55,7 @@ def load_settings() -> Settings:
     return Settings(
         bot_token=os.environ["BOT_TOKEN"],
         shop_bot_token=os.getenv("SHOP_BOT_TOKEN", "").strip(),
+        gifts_subscription_bot_username=os.getenv("GIFTS_SUBSCRIPTION_BOT_USERNAME", "vsdvscbot").strip().lstrip("@"),
         admins=frozenset(x.lower().lstrip("@") for x in csv("ADMIN_USERNAMES", "skillell")),
         llm_key=os.getenv("LLM_API_KEY", "").strip(),
         llm_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/"),

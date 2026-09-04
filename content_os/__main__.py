@@ -29,7 +29,7 @@ from .football import FootballRadar, fixtures_keyboard_rows
 from .shop import OFFERS, category_keyboard, offer_keyboard, storefront
 from .shop_runtime import create_shop_runtime
 from .funnel import summarize_funnel
-from .brand_cards import gift_card, use_gift_card
+from .brand_cards import gift_card, liga_card, use_gift_card, use_liga_card
 from .mtproto_publish import PremiumPublisher
 
 settings=load_settings()
@@ -105,7 +105,7 @@ def main_keyboard():
       [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players"),InlineKeyboardButton(text="🎬 Shorts",callback_data="panel:shorts")],
       [InlineKeyboardButton(text="📊 Контент",callback_data="panel:analytics"),InlineKeyboardButton(text="🎯 Воронка",callback_data="panel:funnel")],
       [InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync")],
-      [InlineKeyboardButton(text="🛒 Магазин услуг",callback_data="panel:shop"),InlineKeyboardButton(text="📥 Заявки",callback_data="panel:orders")],
+      [InlineKeyboardButton(text="📥 Заявки клиентов",callback_data="panel:orders")],
       [InlineKeyboardButton(text="⚙️ Настройки и статус",callback_data="panel:system")]])
 
 def back_menu():
@@ -114,8 +114,11 @@ def back_menu():
 async def review(draft_id):
     draft=db.draft(draft_id); cfg=CHANNELS[draft["channel_key"]]; chat=db.get("admin_chat_id")
     if chat:
-        branded=draft["channel_key"]=="gifts" and use_gift_card(draft_id)
-        image=BufferedInputFile(gift_card(draft["text"],draft["format_key"]),filename=f"gi-{draft_id}.png") if branded else (await discover_image(draft["source_url"] or "") if draft["channel_key"]!="gifts" else None)
+        branded=(draft["channel_key"]=="gifts" and use_gift_card(draft_id)) or (draft["channel_key"]=="liga" and use_liga_card(draft_id))
+        if branded:
+            card=gift_card if draft["channel_key"]=="gifts" else liga_card
+            image=BufferedInputFile(card(draft["text"],draft["format_key"]),filename=f"{draft['channel_key']}-{draft_id}.png")
+        else: image=await discover_image(draft["source_url"] or "") if draft["channel_key"]!="gifts" else None
         if image:
             try: await bot.send_photo(int(chat),image,caption="Предпросмотр фирменной карточки" if branded else "Предпросмотр иллюстрации")
             except Exception: log.info("Source image unavailable: %s",image)
@@ -149,9 +152,10 @@ async def publish(draft_id):
             sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=sales_url)]])
     rendered=render(draft["channel_key"],draft["text"])+(sales_link or "")
     bot_rendered=telegram_html(draft["text"])+(sales_link or "")
-    wants_card=draft["channel_key"]=="gifts" and use_gift_card(draft_id)
+    wants_card=(draft["channel_key"]=="gifts" and use_gift_card(draft_id)) or (draft["channel_key"]=="liga" and use_liga_card(draft_id))
     # Telegram photo captions are limited; keep a long editorial post intact and text-only.
-    image=gift_card(draft["text"],draft["format_key"]) if wants_card and len(telegram_html(draft["text"]))<900 else None
+    card=gift_card if draft["channel_key"]=="gifts" else liga_card
+    image=card(draft["text"],draft["format_key"]) if wants_card and len(telegram_html(draft["text"]))<900 else None
     premium_error=None
     if premium_publisher.ready:
         try:
@@ -162,9 +166,9 @@ async def publish(draft_id):
             sent=None
     else: sent=None
     if sent is None and image:
-        card=BufferedInputFile(image,filename=f"gi-{draft_id}.png")
-        sent=await bot.send_photo(channel,card,caption=bot_rendered,parse_mode=ParseMode.HTML,reply_markup=sales_markup); mode="bot"
-    elif sent is None and draft["channel_key"]=="gifts" and wants_card and not image:
+        card_file=BufferedInputFile(image,filename=f"{draft['channel_key']}-{draft_id}.png")
+        sent=await bot.send_photo(channel,card_file,caption=bot_rendered,parse_mode=ParseMode.HTML,reply_markup=sales_markup); mode="bot"
+    elif sent is None and wants_card and not image:
         sent=await bot.send_message(channel,bot_rendered,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup); mode="bot"
     elif sent is None:
         image=await discover_image(draft["source_url"] or "") if draft["channel_key"]!="gifts" else None
@@ -172,34 +176,42 @@ async def publish(draft_id):
             try: await bot.send_photo(channel,image)
             except Exception: log.info("Source image unavailable during publish: %s",image)
         sent=await bot.send_message(channel,bot_rendered,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup); mode="bot"
-    db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=sent.message_id)
+    message_id=getattr(sent,"message_id",None) or getattr(sent,"id",None)
+    if not message_id: raise RuntimeError("Telegram отправил пост, но не вернул ID сообщения")
+    db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=message_id)
     return mode,premium_error
 
 @router.message(CommandStart())
 async def start(message:Message,state:FSMContext):
     if not admin(message):
         payload=(message.text or "").partition(" ")[2].strip()
+        if shop_bot:
+            me=await shop_bot.get_me(); target=f"https://t.me/{me.username}?start={payload or 'direct'}"
+            return await message.answer("🛍 <b>Магазин работает в отдельном боте</b>\n\nТам Liga Progress, Digital Lab и подписка Gifts Intelligence",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть магазин →",url=target)]]))
         source="liga_post" if payload=="service_liga" else "gifts_post" if payload=="service_gifts" else "direct"
         await state.update_data(shop_source=source); track(message.from_user.id,"landing",source)
         if payload=="service_liga": return await message.answer("<b>Хочешь понять, что ты реально сделал в эпизоде?</b>\n\nВыбери формат разбора",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("liga"))
-        if payload=="service_gifts": return await message.answer("<b>Красивый Gift ещё не значит ликвидный</b>\n\nВыбери, что вскрываем",parse_mode=ParseMode.HTML,reply_markup=category_keyboard("gifts"))
-        return await message.answer("<b>Здесь не продают воздух</b>\n\nВыбери, где сейчас болит сильнее — футбол, Gifts или собственный Telegram-канал",parse_mode=ParseMode.HTML,reply_markup=storefront())
+        if payload=="service_gifts": return await message.answer("<b>Gifts Intelligence</b>\n\nАналитика и сигналы доступны в подписочном боте",parse_mode=ParseMode.HTML,reply_markup=storefront(settings.gifts_subscription_bot_username))
+        return await message.answer("<b>Выбери результат</b>",parse_mode=ParseMode.HTML,reply_markup=storefront(settings.gifts_subscription_bot_username))
     db.set("admin_chat_id",str(message.chat.id)); await message.answer("🧠 <b>Content OS</b>\n\nВся редакция теперь управляется кнопками. Выбирай раздел:",parse_mode=ParseMode.HTML,reply_markup=main_keyboard())
 
 @router.message(Command("shop"))
 async def shop_command(message:Message,state:FSMContext):
     await state.clear()
-    await message.answer("<b>Выбери направление</b>",parse_mode=ParseMode.HTML,reply_markup=storefront())
+    if shop_bot and not admin(message):
+        me=await shop_bot.get_me()
+        return await message.answer("Магазин вынесен в отдельного бота",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть магазин →",url=f"https://t.me/{me.username}?start=direct")]]))
+    await message.answer("<b>Витрина глазами клиента</b>",parse_mode=ParseMode.HTML,reply_markup=storefront(settings.gifts_subscription_bot_username))
 
 @router.callback_query(F.data=="shop:home")
 async def shop_home(c:CallbackQuery,state:FSMContext):
-    await state.clear(); await c.message.edit_text("<b>Выбери направление</b>",parse_mode=ParseMode.HTML,reply_markup=storefront()); await c.answer()
+    await state.clear(); await c.message.edit_text("<b>Выбери результат</b>",parse_mode=ParseMode.HTML,reply_markup=storefront(settings.gifts_subscription_bot_username)); await c.answer()
 
 @router.callback_query(F.data.startswith("shop:category:"))
 async def shop_category(c:CallbackQuery):
     category=c.data.rsplit(":",1)[-1]
-    if category not in {"liga","gifts"}: return await c.answer("Раздел не найден",show_alert=True)
-    title="Футбольная лаборатория" if category=="liga" else "Gifts Intelligence"
+    if category not in {"liga","services"}: return await c.answer("Раздел не найден",show_alert=True)
+    title="Футбольная лаборатория" if category=="liga" else "Digital Lab"
     await c.message.edit_text(f"<b>{title}</b>\n\nВыбирай не красивое название, а проблему, которую надо закрыть",parse_mode=ParseMode.HTML,reply_markup=category_keyboard(category)); await c.answer()
 
 @router.callback_query(F.data.startswith("shop:offer:"))
@@ -220,14 +232,14 @@ async def shop_order(c:CallbackQuery,state:FSMContext):
 async def diagnostic_start(c:CallbackQuery,state:FSMContext):
     if db.get(f"free_diagnostic:{c.from_user.id}"): return await c.answer("Ты уже использовал бесплатную диагностику",show_alert=True)
     await state.set_state(ShopState.waiting_diagnostic)
-    await c.message.edit_text("🎯 <b>Бесплатная экспресс-диагностика</b>\n\nНачни сообщение со слова <b>Футбол</b> или <b>Gifts</b>, затем коротко опиши проблему\n\nНапример: <i>Футбол. Теряю место в составе после двух слабых матчей</i>",parse_mode=ParseMode.HTML); await c.answer()
+    await c.message.edit_text("🎯 <b>Бесплатная экспресс-диагностика</b>\n\nНачни сообщение со слова <b>Футбол</b>, <b>Контент</b> или <b>Gifts</b>, затем коротко опиши проблему\n\nНапример: <i>Футбол. Теряю место в составе после двух слабых матчей</i>",parse_mode=ParseMode.HTML); await c.answer()
 
 @router.message(ShopState.waiting_diagnostic)
 async def diagnostic_result(message:Message,state:FSMContext):
     brief=(message.text or "").strip(); lower=brief.lower()
-    if len(brief)<20 or not (lower.startswith("футбол") or lower.startswith("gifts")):
-        return await message.answer("Начни с «Футбол» или «Gifts» и опиши ситуацию немного подробнее")
-    channel="liga" if lower.startswith("футбол") else "gifts"; offer_key="liga_episode" if channel=="liga" else "gifts_audit"
+    if len(brief)<20 or not any(lower.startswith(x) for x in ("футбол","контент","услуги","gifts","гифт")):
+        return await message.answer("Начни с «Футбол», «Контент» или «Gifts» и опиши ситуацию немного подробнее")
+    channel="liga" if lower.startswith("футбол") else "gifts"; offer_key="liga_episode" if channel=="liga" else "ai_short"
     wait=await message.answer("🧠 Ищу не очевидный совет, а реальную слабую точку…")
     system=(CHANNELS[channel]["voice"]+"\nТы проводишь бесплатную экспресс-диагностику потенциальному клиенту. "
       "Дай 3 коротких наблюдения: что человек, вероятно, недооценивает; что проверить прямо сейчас; какой следующий шаг. "
@@ -235,7 +247,11 @@ async def diagnostic_result(message:Message,state:FSMContext):
     try: result=await editor.llm(system,brief,.65)
     except Exception: result="Проблема понятна, но данных пока мало для честного вывода. Зафиксируй один конкретный эпизод или Gift, решение, которое ты принял, и результат. Тогда станет видно не симптом, а место, где действительно теряется преимущество"
     db.set(f"free_diagnostic:{message.from_user.id}",datetime.now(settings.timezone).isoformat()); await state.clear()
-    await wait.edit_text(telegram_html(result)+"\n\n<b>Хочешь разобрать это на конкретных данных?</b>",parse_mode=ParseMode.HTML,reply_markup=offer_keyboard(offer_key))
+    if lower.startswith(("gifts","гифт")):
+        username=settings.gifts_subscription_bot_username or "vsdvscbot"
+        next_step=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start=shop")]])
+    else: next_step=offer_keyboard(offer_key)
+    await wait.edit_text(telegram_html(result)+"\n\n<b>Следующий шаг</b>",parse_mode=ParseMode.HTML,reply_markup=next_step)
 
 @router.message(ShopState.waiting_brief)
 async def shop_brief(message:Message,state:FSMContext):
@@ -256,7 +272,7 @@ async def shop_brief(message:Message,state:FSMContext):
         await bot.send_message(int(admin_chat),f"<b>Новая заявка #{order_id}</b>\n\n{html.escape(offer.title)} · {html.escape(offer.price)}\nКлиент: {contact}\n\n{html.escape(brief)}",parse_mode=ParseMode.HTML)
     track(message.from_user.id,"order_created",data.get("shop_source","direct"),key)
     await state.clear()
-    await message.answer(f"<b>Заявка #{order_id} принята</b>\n\nНапишем после просмотра задачи. Никакой оплаты вслепую",parse_mode=ParseMode.HTML,reply_markup=storefront())
+    await message.answer(f"<b>Заявка #{order_id} принята</b>\n\nНапишем после просмотра задачи. Никакой оплаты вслепую",parse_mode=ParseMode.HTML,reply_markup=storefront(settings.gifts_subscription_bot_username))
 
 @router.message(Command("menu"))
 async def dashboard(message:Message,state:FSMContext):
@@ -278,7 +294,7 @@ async def panel_generate(c:CallbackQuery,state:FSMContext):
 @router.callback_query(F.data=="panel:shop")
 async def panel_shop(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
-    await state.clear(); await c.message.edit_text("🛒 <b>Магазин глазами клиента</b>",parse_mode=ParseMode.HTML,reply_markup=storefront()); await c.answer()
+    await state.clear(); await c.message.edit_text("🛒 <b>Магазин глазами клиента</b>",parse_mode=ParseMode.HTML,reply_markup=storefront(settings.gifts_subscription_bot_username)); await c.answer()
 
 @router.callback_query(F.data=="panel:orders")
 async def panel_orders(c:CallbackQuery):
@@ -394,7 +410,7 @@ async def save_premium_emoji(message:Message):
     for entity in message.entities or []:
         emoji_id=getattr(entity,"custom_emoji_id",None)
         if emoji_id:
-            fallback=entity.extract_from(message.text or ""); custom[fallback]=str(emoji_id)
+            fallback=entity.extract_from(message.text or "").replace("\ufe0f",""); custom[fallback]=str(emoji_id)
     if not custom: return await message.answer("Я не увидел премиум-эмодзи. Отправь именно custom emoji, не обычный Unicode.")
     existing_raw=db.get(f"premium_emojis:{channel}") or "{}"
     try: existing=json.loads(existing_raw)
@@ -482,7 +498,14 @@ async def match_status(message:Message):
     try: row=await matchlens.refresh(int(parts[1]))
     except Exception as exc: return await message.answer(f"❌ {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
     result=f"\n<a href=\"{html.escape(row['result_url'])}\">Открыть результат</a>" if row["result_url"] else ""
-    hint=f"\n\nВыбери ID футболиста на превью: <code>/matchplayer {row['id']} 7</code>" if row["status"]=="awaiting_selection" else ""
+    tracker_ids=[]
+    try: metrics_raw=row["metrics_json"]
+    except (KeyError,IndexError): metrics_raw=None
+    if metrics_raw:
+        try: tracker_ids=list((json.loads(metrics_raw) or {}).get("players",{}))
+        except (TypeError,ValueError): pass
+    ids=f"\nНайдены ID: <code>{html.escape(', '.join(tracker_ids[:30]))}</code>" if tracker_ids else ""
+    hint=(f"{ids}\n\nВыбери футболиста: <code>/matchplayer {row['id']} ID</code>" if row["status"]=="awaiting_selection" else "")
     error=f"\nОшибка: {html.escape(row['error'])}" if row["error"] else ""
     await message.answer(f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{result}{hint}{error}",parse_mode=ParseMode.HTML,disable_web_page_preview=True)
 

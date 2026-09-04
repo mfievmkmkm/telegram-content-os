@@ -38,3 +38,8 @@ def test_custom_emoji_is_rendered_with_safe_numeric_id():
 
 def test_custom_emoji_rejects_non_numeric_id():
     assert "tg-emoji" not in telegram_html("⚡ Хук",{"⚡":"bad"})
+
+def test_custom_emoji_matches_with_or_without_variation_selector():
+    result=telegram_html("⚠️ Риск и ⚠ риск",{"⚠":"5368324170671202286"})
+    assert result.count("<tg-emoji") == 2
+    assert "__CUSTOM_EMOJI" not in result
