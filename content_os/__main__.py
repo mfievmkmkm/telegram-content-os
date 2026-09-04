@@ -869,9 +869,10 @@ async def create_shorts(c:CallbackQuery):
         async def progress(value):
             try: await status.edit_text(f"🎬 <b>Собираю Shorts: {value}%</b>\nПодбираю кадры, озвучку и субтитры…",parse_mode=ParseMode.HTML)
             except Exception: pass
-        _,video=await videos.render(data,progress)
+        _,video,voice_provider=await videos.render(data,progress)
         await status.delete()
-        await bot.send_video(c.message.chat.id,BufferedInputFile(video,filename=f"shorts-{job_id}.mp4"),caption=f"🎬 {data['title']}\n\n{data['caption']}",supports_streaming=True)
+        voice_note="" if voice_provider=="elevenlabs" else "\n\n⚠️ Голос: резервный Edge — проверь ELEVENLABS_API_KEY и ELEVENLABS_VOICE_ID"
+        await bot.send_video(c.message.chat.id,BufferedInputFile(video,filename=f"shorts-{job_id}.mp4"),caption=f"🎬 {data['title']}\n\n{data['caption']}{voice_note}",supports_streaming=True)
     except Exception as exc:
         log.exception("Shorts generation failed"); await c.message.answer(f"❌ Shorts не собрался: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
 
