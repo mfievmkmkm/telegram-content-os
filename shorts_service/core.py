@@ -20,17 +20,44 @@ def caption_chunks(script:str,max_words:int=3)->list[str]:
     return chunks or ["СМОТРИ ДО КОНЦА"]
 
 
-def ass_subtitles(script:str,duration:float)->str:
+def alignment_chunks(alignment:dict,max_words:int=3)->list[tuple[str,float,float]]:
+    """Convert character timing into short mobile caption phrases."""
+    chars=alignment.get("characters") or []
+    starts=alignment.get("character_start_times_seconds") or []
+    ends=alignment.get("character_end_times_seconds") or []
+    if not chars or not (len(chars)==len(starts)==len(ends)): return []
+    words=[]; value=""; start=None; end=0.0
+    for char,left,right in zip(chars,starts,ends):
+        if str(char).isspace():
+            if value: words.append((value,float(start),float(end))); value=""; start=None
+            continue
+        if start is None: start=float(left)
+        value+=str(char); end=float(right)
+    if value: words.append((value,float(start),float(end)))
+    result=[]
+    for index in range(0,len(words),max_words):
+        group=words[index:index+max_words]
+        result.append((" ".join(word[0] for word in group),group[0][1],group[-1][2]))
+    if len(result)>1 and len(result[-1][0].split())==1:
+        last=result.pop(); previous=result.pop(); result.append((previous[0]+" "+last[0],previous[1],last[2]))
+    return result
+
+
+def ass_subtitles(script:str,duration:float,alignment:dict|None=None)->str:
+    timed=alignment_chunks(alignment or {})
     chunks=caption_chunks(script); total=sum(len(x.split()) for x in chunks); cursor=0.0; lines=[]
     def stamp(seconds):
         hours=int(seconds//3600); minutes=int(seconds%3600//60); rest=seconds%60
         return f"{hours}:{minutes:02d}:{rest:05.2f}"
-    for chunk in chunks:
-        share=max(.7,duration*len(chunk.split())/max(1,total)); end=min(duration,cursor+share)
+    entries=timed or [(chunk,None,None) for chunk in chunks]
+    for chunk,aligned_start,aligned_end in entries:
+        if aligned_start is None:
+            share=max(.7,duration*len(chunk.split())/max(1,total)); start=cursor; end=min(duration,cursor+share)
+        else: start=max(0.0,aligned_start-.04); end=min(duration,aligned_end+.08)
         words=chunk.replace("{","(").replace("}",")").replace("\n"," ").split()
         # One accented word gives the eye a target without karaoke clutter.
         safe=" ".join(words[:-1]+([r"{\c&H55FFB0&}"+words[-1]+r"{\c&HFFFFFF&}"] if words else []))
-        lines.append(f"Dialogue: 0,{stamp(cursor)},{stamp(end)},Main,,0,0,0,,{safe}")
+        lines.append(f"Dialogue: 0,{stamp(start)},{stamp(end)},Main,,0,0,0,,{safe}")
         cursor=end
     return """[Script Info]
 ScriptType: v4.00+
