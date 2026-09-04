@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 
+
 def player_report(points: list[list[float]] | list[tuple[float, float, float]], duration: float) -> dict:
     if not points:
         return {}
