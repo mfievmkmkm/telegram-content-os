@@ -3,6 +3,7 @@ import os
 import tempfile
 from urllib.parse import urlparse
 from urllib.parse import urljoin
+import json
 
 import aiohttp
 
@@ -106,6 +107,28 @@ class MatchLensClient:
             return str(body["ref"])
         finally:
             if temp_path: os.unlink(temp_path)
+
+
+def aggregate_passport(matches):
+    reports=[]
+    for match in matches:
+        try:
+            value=json.loads(match["metrics_json"] or "null")
+            selected=(value or {}).get("selected_player") or {}
+            if selected: reports.append((value,selected))
+        except (json.JSONDecodeError,TypeError): pass
+    if not reports: return None
+    zones={key:0.0 for key in ("left","centre","right")}
+    for _,item in reports:
+        for key in zones: zones[key]+=float((item.get("zones_percent") or {}).get(key,0))
+    return {
+        "count":len(reports),
+        "video_minutes":sum(float(full.get("duration_seconds",0)) for full,_ in reports)/60,
+        "visibility":sum(float(item.get("visibility_percent",0)) for _,item in reports)/len(reports),
+        "movement":sum(float(item.get("movement_index",0)) for _,item in reports)/len(reports),
+        "zone":max(zones,key=zones.get),
+        "moments":sum(len(item.get("burst_timestamps") or []) for _,item in reports),
+    }
 
 
 def confidence_legend():
