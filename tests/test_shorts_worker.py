@@ -6,7 +6,8 @@ def test_script_is_tight_and_subtitles_are_short():
     assert "—" not in script and "..." not in script and "\n" not in script
     assert all(len(chunk.split())<=7 for chunk in caption_chunks(script))
     ass=ass_subtitles(script,12)
-    assert "PlayResY: 1920" in ass and "Dialogue:" in ass
+    assert "PlayResY: 1280" in ass and "Dialogue:" in ass
+    assert all(len(chunk.split())<=4 for chunk in caption_chunks(script))
 
 
 def test_stock_terms_are_safe_and_unique():
