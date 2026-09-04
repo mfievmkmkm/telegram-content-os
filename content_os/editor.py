@@ -107,7 +107,12 @@ class Editor:
                 "Не цитируй, не называй автора или курс, не воспроизводи структуру урока. Полностью переосмысли принцип для аудитории канала. "
                 "Если материал про оффер или продажи, используй только честные элементы: конкретная боль, измеримая ценность, снятие риска и один CTA; не выдумывай дефицит. "
                 f"Формат: {self.format_rule('course_insight')}\n\n"+knowledge)
-        cfg=CHANNELS[channel_key]; text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.86)); score,_=score_hook(plain_text(text)); text=decorate_post(text,channel_key)
+        cfg=CHANNELS[channel_key]; text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.86)); score,reasons=score_hook(plain_text(text))
+        if score<3:
+            text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,
+                f"Переосмысли материал ещё раз и усили первую строку. Проблемы хука: {', '.join(reasons)}. Не называй курс и не добавляй факты.\n\n{text}",.92))
+            score,_=score_hook(plain_text(text))
+        text=decorate_post(text,channel_key)
         return self.db.save_draft(channel_key,"course_insight",text,score,"Course Intelligence","",None)
 
     async def create_from_brief(self,channel_key,format_key,brief,title="Своя тема",url=""):
