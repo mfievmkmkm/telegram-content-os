@@ -40,4 +40,10 @@ class AnalyticsCollector:
         for i,row in enumerate(rows,1):
             hook=next((x.strip() for x in row["text"].splitlines() if x.strip()),"")[:65]
             lines.append(f"{i}. {row['channel_key']} · {row['format_key']} · хук {row['hook_score']}/5\n{hook}\n👁 {row['views']} · ❤️ {row['reactions']} · ↗️ {row['forwards']} · ER {row['engagement']:.2f}%")
-        return "🏆 Лучшие публикации\n\n"+"\n\n".join(lines)
+        winners=[]
+        for channel,title in (("liga","Лига"),("gifts","Gifts")):
+            insights=self.db.editorial_insights(channel)
+            if insights:
+                winners.append(f"<b>{title}:</b> "+", ".join(f"{x['format_key']} — ER {x['avg_er']:.2f}% ({x['samples']})" for x in insights))
+        learned=("\n\n🧠 <b>Что масштабировать</b>\n"+"\n".join(winners)) if winners else ""
+        return "🏆 <b>Лучшие публикации</b>\n\n"+"\n\n".join(lines)+learned
