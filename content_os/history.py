@@ -124,7 +124,7 @@ class HistoryImporter:
                             found+=1; imported=True; added+=self.db.save_course_note(channel,message.id,text[:12000],date)
                         filename=getattr(getattr(message,"file",None),"name",None) or ""
                         size=int(getattr(getattr(message,"file",None),"size",0) or 0)
-                        if message.document and Path(filename).suffix.lower() in SUPPORTED|{".zip"} and size<=20*1024*1024:
+                        if message.document and Path(filename).suffix.lower() in (SUPPORTED|{".zip"}) and size<=20*1024*1024:
                             try:
                                 blob=await client.download_media(message,file=bytes)
                                 for file_index,(inner_name,body) in enumerate(extract_course_files(filename,blob)):
