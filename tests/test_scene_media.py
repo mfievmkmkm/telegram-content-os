@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from shorts_service.scene_media import SUPPORTED_ASSET_TYPES, compile_scene_specs, write_text_card_copy
+from shorts_service.scene_media import IMAGE_ASSET_TYPES, SUPPORTED_ASSET_TYPES, _public_https_url, compile_scene_specs, write_text_card_copy
 
 
 def test_scene_specs_preserve_ratios_and_match_audio_duration():
@@ -21,5 +21,14 @@ def test_text_card_copy_uses_screen_text(tmp_path: Path):
     assert "СМОТРИ MODEL" in path.read_text("utf-8")
 
 
-def test_worker_declares_only_assets_it_really_renders_natively():
-    assert SUPPORTED_ASSET_TYPES == {"stock_video", "text_scene"}
+def test_worker_declares_image_assets_as_native_when_asset_ref_is_available():
+    assert {"brand_card", "screenshot", "meme", "market_chart", "generated_image", "user_asset"} == IMAGE_ASSET_TYPES
+    assert {"stock_video", "text_scene"}.issubset(SUPPORTED_ASSET_TYPES)
+    assert IMAGE_ASSET_TYPES.issubset(SUPPORTED_ASSET_TYPES)
+
+
+def test_remote_asset_guard_rejects_non_https_and_private_hosts():
+    assert not _public_https_url("http://example.com/a.png")
+    assert not _public_https_url("https://localhost/a.png")
+    assert not _public_https_url("https://127.0.0.1/a.png")
+    assert not _public_https_url("file:///etc/passwd")
