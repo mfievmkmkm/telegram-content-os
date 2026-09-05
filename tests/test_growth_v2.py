@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from content_os.growth.analytics_v2 import build_growth_summary
-from content_os.growth.attribution import CampaignRef, build_funnel_summary
+from content_os.growth.attribution import CampaignRef, build_funnel_summary, campaign_source
 from content_os.growth.experiments import Experiment, ExperimentVariant, validate_experiment
 
 
@@ -28,17 +28,20 @@ def test_growth_summary_does_not_fake_missing_window():
     assert 24 not in summary.windows
 
 
-def test_campaign_ref_roundtrip_and_funnel():
-    ref = CampaignRef(project="gifts", content="184", format="shorts", offer="tracker", campaign="sep")
+def test_campaign_ref_uses_telegram_safe_token_and_real_shop_event_names():
+    ref = CampaignRef(project="gifts", content_id=184, format_key="shorts", offer="tracker")
     token = ref.token()
-    assert CampaignRef.parse(token) == ref
+    assert len(token) <= 64
     summary = build_funnel_summary([
-        {"source": token, "event_type": "visit"},
-        {"source": token, "event_type": "bot_start"},
-        {"source": token, "event_type": "lead"},
-        {"source": token, "event_type": "sale", "revenue": 990},
+        {"source": token, "event_type": "landing"},
+        {"source": token, "event_type": "recommendation"},
+        {"source": token, "event_type": "order_created"},
+        {"source": token, "event_type": "paid", "revenue": 990},
         {"source": "other", "event_type": "sale", "revenue": 99999},
-    ], token)
+    ], campaign_source(ref))
+    assert summary.visits == 1
+    assert summary.leads == 1
+    assert summary.orders == 1
     assert summary.sales == 1
     assert summary.revenue == 990
 
