@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from .content_fingerprint import ContentFingerprint
+from .content_fingerprint import ContentFingerprint, signature
 
 
 class EditorialMemory:
@@ -51,8 +51,18 @@ class EditorialMemory:
         except (TypeError, ValueError):
             return None
 
-    def select_variant(self, draft_id: int | str, variant: int) -> None:
-        self.db.set(f"v2:visual_variant:{draft_id}", str(max(0, min(int(variant), 2))))
+    def variant_for_text(self, text: str) -> int:
+        value = self.db.get(f"v2:visual_text:{signature(text)}")
+        try:
+            return max(0, min(int(value), 2)) if value is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    def select_variant(self, draft_id: int | str, variant: int, text: str = "") -> None:
+        normalized = max(0, min(int(variant), 2))
+        self.db.set(f"v2:visual_variant:{draft_id}", str(normalized))
+        if text:
+            self.db.set(f"v2:visual_text:{signature(text)}", str(normalized))
 
     def _json(self, key: str, fallback):
         raw = self.db.get(key)
