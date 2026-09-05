@@ -15,4 +15,4 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
-      - run: python -m compileall -q content_os
+      - run: python -m compileall -q content_os shorts_service
