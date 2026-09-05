@@ -108,19 +108,23 @@ def run(command,timeout=900):
         raise RuntimeError(f"FFmpeg exit {result.returncode}: {detail}")
 
 
-async def synthesize(script:str,path:Path,voice:str,rate:str)->tuple[str,dict|None]:
+async def synthesize(script:str,path:Path,voice:str,rate:str)->tuple[str,dict|None,str]:
     """Premium TTS when configured, free Edge voice as a resilient fallback."""
     if ELEVEN_KEY and ELEVEN_VOICE:
         url=f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE}/with-timestamps"
         headers={"xi-api-key":ELEVEN_KEY,"Content-Type":"application/json","Accept":"audio/mpeg"}
         body={"text":script,"model_id":ELEVEN_MODEL,"voice_settings":{
             "stability":0.38,"similarity_boost":0.78,"style":0.42,"use_speaker_boost":True,"speed":1.08}}
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
-            async with session.post(url,params={"output_format":"mp3_44100_128"},json=body,headers=headers) as response:
-                if response.status<400:
-                    result=await response.json(); path.write_bytes(base64.b64decode(result["audio_base64"]))
-                    return "elevenlabs",result.get("normalized_alignment") or result.get("alignment")
-    await edge_tts.Communicate(script,voice=voice,rate=rate,pitch="+2Hz").save(str(path)); return "edge",None
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
+                async with session.post(url,params={"output_format":"mp3_44100_128"},json=body,headers=headers) as response:
+                    if response.status<400:
+                        result=await response.json(); path.write_bytes(base64.b64decode(result["audio_base64"]))
+                        return "elevenlabs",result.get("normalized_alignment") or result.get("alignment"),""
+                    eleven_error=f"ElevenLabs HTTP {response.status}: {(await response.text())[:160]}"
+        except Exception as exc: eleven_error=f"ElevenLabs {type(exc).__name__}: {str(exc)[:140]}"
+    else: eleven_error="ELEVENLABS_API_KEY или ELEVENLABS_VOICE_ID не заполнены"
+    await edge_tts.Communicate(script,voice=voice,rate=rate,pitch="+2Hz").save(str(path)); return "edge",None,eleven_error
 
 
 async def render(task_id:str,payload:dict):
@@ -129,11 +133,14 @@ async def render(task_id:str,payload:dict):
         script=clean_script(payload.get("video_script") or payload.get("video_subject") or "")
         # Long written posts sound synthetic when read aloud. Keep only the sharpest 62 words.
         script=" ".join(script.split()[:62])
+        # Long full stops produce robotic one-second gaps in both TTS engines.
+        script=script.replace("?",",").replace("!",",").replace(".",",")
+        script=" ".join(script.strip(" ,").split())
         if len(script)<30: raise RuntimeError("Сценарий озвучки слишком короткий")
         job["progress"]=5; write_job(job)
         voice=str(payload.get("voice_name") or "ru-RU-DmitryNeural")
         rate_value=float(payload.get("voice_rate") or 1.18); rate=f"{round((rate_value-1)*100):+d}%"
-        job["voice_provider"],alignment=await synthesize(script,folder/"voice.mp3",voice,rate); write_job(job)
+        job["voice_provider"],alignment,job["voice_error"]=await synthesize(script,folder/"voice.mp3",voice,rate); write_job(job)
         probe=subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(folder/"voice.mp3")],text=True)
         duration=max(8.0,float(probe.strip())); job["progress"]=20; write_job(job)
         clips=await pexels_clips(unique_terms(payload),folder)
