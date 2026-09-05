@@ -16,6 +16,24 @@ _LEGACY_EVENT_FALLBACK = {
 }
 
 
+def _latest_order_id(db, user_id):
+    if not hasattr(db, "client"):
+        return None
+    try:
+        rows = (
+            db.client.table("content_os_service_orders")
+            .select("id")
+            .eq("user_id", user_id)
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0]["id"] if rows else None
+    except Exception:
+        return None
+
+
 def install(db):
     """Install additive v2 persistence helpers without replacing the legacy DB layer.
 
@@ -26,11 +44,28 @@ def install(db):
     original = db.save_funnel_event
 
     def safe_funnel(self, user_id, event_type, source="", offer_key=""):
+        normalized = str(event_type or "").strip().lower()
+        if hasattr(self, "client"):
+            payload = {
+                "user_id": user_id,
+                "event_type": normalized,
+                "source": source or None,
+                "offer_key": offer_key or None,
+                "created_at": datetime.now(self.timezone).isoformat(),
+            }
+            if normalized in {"order_created", "order", "paid", "payment", "sale"}:
+                order_id = _latest_order_id(self, user_id)
+                if order_id is not None:
+                    payload["order_id"] = order_id
+            try:
+                return self.client.table("content_os_funnel_events").insert(payload).execute()
+            except Exception:
+                pass
         try:
-            return original(user_id, event_type, source, offer_key)
+            return original(user_id, normalized, source, offer_key)
         except Exception:
-            fallback = _LEGACY_EVENT_FALLBACK.get(str(event_type or "").lower())
-            if not fallback or fallback == event_type:
+            fallback = _LEGACY_EVENT_FALLBACK.get(normalized)
+            if not fallback or fallback == normalized:
                 raise
             return original(user_id, fallback, source, offer_key)
 
@@ -46,6 +81,8 @@ def install(db):
                 "offer_key": offer_key or None,
                 "created_at": datetime.now(self.timezone).isoformat(),
             }
+            if order_id is None and event_type in {"order_created", "order", "paid", "payment", "sale"}:
+                order_id = _latest_order_id(self, user_id)
             if order_id is not None:
                 payload["order_id"] = order_id
             if revenue:
