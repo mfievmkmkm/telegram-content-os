@@ -38,6 +38,10 @@ def test_session_store_keeps_review_state():
     changed = store.choose_voice(7, "ru_lera")
     assert changed.voice_preset == "ru_lera"
     assert changed.stage == ShortStage.VOICE
+    styled = store.choose_style(7, "meme")
+    assert styled.delivery_preset == "meme"
+    assert styled.approved is False
+    assert styled.stage == ShortStage.SCRIPT
 
 
 def test_ui_is_review_first_and_readable():
