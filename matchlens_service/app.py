@@ -85,7 +85,7 @@ def status(job_id:str,x_api_key:str|None=Header(None)):
 
 @app.post("/v1/matches/{job_id}/target")
 def target(job_id:str,payload:TargetIn,background:BackgroundTasks,x_api_key:str|None=Header(None)):
-    authorize(x_api_key); job=read_job(job_id); job["tracker_id"]=payload.tracker_id; job["status"]="processing"; job["progress"]=75; write_job(job)
+    authorize(x_api_key); job=read_job(job_id); job["tracker_id"]=payload.tracker_id; job["status"]="processing"; job["progress"]=75; job["error"]=None; write_job(job)
     background.add_task(build_report,job_id); return {"ok":True}
 
 
@@ -174,7 +174,12 @@ def analyse(job_id):
                         "accuracy_note":"Координаты, цвет формы и движение оценены по кадру. Это не GPS и не официальный event-data"}
         job.update(status="awaiting_selection",progress=70,report_url=f"/v1/reports/{job_id}"); write_job(job)
     except Exception as exc:
-        job.update(status="failed",error=f"{type(exc).__name__}: {str(exc)[:400]}"); write_job(job)
+        message=str(exc)[:400]
+        if "честный разбор невозможен" in message:
+            job.update(status="awaiting_selection",progress=70,error=message)
+        else:
+            job.update(status="failed",error=f"{type(exc).__name__}: {message}")
+        write_job(job)
 
 
 def build_report(job_id):

@@ -543,11 +543,12 @@ async def show_match_status(target,local_id,edit=False):
     if suggested: tracker_ids=[*map(str,suggested),*[x for x in tracker_ids if x not in set(map(str,suggested))]]
     recommendation=f"\nПодходят по форме и качеству: <code>{html.escape(', '.join(map(str,suggested)))}</code>" if suggested else ""
     ids=f"\nНайдены треки: <code>{html.escape(', '.join(tracker_ids[:24]))}</code>{recommendation}" if tracker_ids else ""
-    hint=f"{ids}\n\nНажми на ID своего футболиста ниже" if row["status"]=="awaiting_selection" else ""
+    can_select=row["status"]=="awaiting_selection" or (row["status"]=="failed" and bool(tracker_ids))
+    hint=f"{ids}\n\nНажми на другой ID своего футболиста ниже" if can_select else ""
     error=f"\nОшибка: {html.escape(row['error'])}" if row["error"] else ""
     text=f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{hint}{error}"
     profiles=db.players() if row["status"]=="completed" else ()
-    markup=match_job_keyboard(row["id"],tracker_ids if row["status"]=="awaiting_selection" else (),row["result_url"] or "",profiles)
+    markup=match_job_keyboard(row["id"],tracker_ids if can_select else (),row["result_url"] or "",profiles)
     if edit: await safe_edit_text(target,text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
     else: await target.answer(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
     return row
