@@ -16,11 +16,13 @@ from starlette.background import BackgroundTask
 try:
     from . import app as legacy
     from .core import clean_script, unique_terms
+    from .scene_media import SUPPORTED_ASSET_TYPES, compile_scene_specs, text_card_filter, write_text_card_copy
     from .subtitles import ass_subtitles_v2
     from .tts import TTSRouter
 except ImportError:
     import app as legacy
     from core import clean_script, unique_terms
+    from scene_media import SUPPORTED_ASSET_TYPES, compile_scene_specs, text_card_filter, write_text_card_copy
     from subtitles import ass_subtitles_v2
     from tts import TTSRouter
 
@@ -31,7 +33,7 @@ TASKS = legacy.TASKS
 API_KEY = legacy.API_KEY
 PEXELS_KEY = legacy.PEXELS_KEY
 TTS = TTSRouter()
-app = FastAPI(title="Content OS Shorts Worker", version="2.0")
+app = FastAPI(title="Content OS Shorts Worker", version="2.1")
 
 
 @app.on_event("startup")
@@ -57,13 +59,15 @@ def health():
     return {
         "ok": True,
         "service": "content-os-shorts",
-        "version": "2.0",
+        "version": "2.1",
         "pexels": bool(PEXELS_KEY),
         "persistent": str(DATA) == "/data",
         "tts": providers,
         "voice": "speechkit" if providers.get("speechkit") else "elevenlabs" if providers.get("elevenlabs") else "edge-fallback" if TTS.allow_edge_fallback else "not-configured",
         "staged": True,
         "subtitle_presets": ["punch", "clean", "sport", "meme"],
+        "asset_types": sorted(SUPPORTED_ASSET_TYPES),
+        "unsupported_asset_policy": "text_scene_fallback",
     }
 
 
@@ -118,6 +122,19 @@ def scene_terms(payload: dict) -> list[str]:
     return result[:10]
 
 
+def _render_text_scene(folder: Path, index: int, seconds: float, scene, channel: str) -> Path:
+    copy_path = folder / f"scene-{index}.txt"
+    write_text_card_copy(copy_path, scene)
+    output = folder / f"part-{index}.mp4"
+    legacy.run([
+        "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x111111:s=720x1280:r=25",
+        "-t", f"{seconds:.3f}", "-vf", text_card_filter(copy_path, channel),
+        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-threads", "1",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output),
+    ])
+    return output
+
+
 async def render(task_id: str, payload: dict):
     job = read_job(task_id)
     folder = TASKS / task_id
@@ -146,34 +163,57 @@ async def render(task_id: str, payload: dict):
             "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(folder / "voice.mp3")
         ], text=True)
         duration = max(8.0, float(probe.strip()))
-        job.update(progress=20, stage="scenes")
+        specs = compile_scene_specs(payload, duration)
+        channel = str(payload.get("brand_channel") or payload.get("channel") or "liga")
+        job.update(progress=20, stage="scenes", scene_count=len(specs))
         write_job(job)
 
-        clips = await legacy.pexels_clips(scene_terms(payload), folder)
-        if len(clips) < 3:
-            raise RuntimeError("Pexels вернул меньше трёх пригодных видеоклипов")
+        stock_needed = any(scene.asset_type == "stock_video" for scene in specs)
+        clips = await legacy.pexels_clips(scene_terms(payload), folder) if stock_needed else []
+        fallbacks: list[str] = []
+        normalized: list[Path] = []
+        stock_cursor = 0
+        part_index = 0
 
-        job.update(progress=42, stage="render")
-        write_job(job)
-        cut = 1.7
-        count = math.ceil(duration / cut)
-        normalized = []
-        for index in range(count):
-            source = clips[index % len(clips)]
-            output = folder / f"part-{index}.mp4"
-            offset = (index // len(clips)) * 1.7
-            x = (-18, 0, 18)[index % 3]
-            y = (-30, 0, 30)[index % 3]
-            legacy.run([
-                "ffmpeg", "-y", "-stream_loop", "-1", "-i", str(source), "-ss", f"{offset:.1f}", "-t", str(cut),
-                "-vf", f"scale=760:1352:force_original_aspect_ratio=increase,crop=720:1280:(iw-ow)/2+{x}:(ih-oh)/2+{y},eq=contrast=1.04:saturation=1.08,fps=25",
-                "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-threads", "1",
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output),
-            ])
-            normalized.append(output)
-            job["progress"] = 42 + int((index + 1) / count * 32)
+        for scene_index, scene in enumerate(specs):
+            if scene.asset_type == "stock_video" and clips:
+                # Keep cuts energetic while respecting the planned scene duration.
+                pieces = max(1, math.ceil(scene.seconds / 2.2))
+                piece_duration = scene.seconds / pieces
+                for piece in range(pieces):
+                    source = clips[stock_cursor % len(clips)]
+                    stock_cursor += 1
+                    output = folder / f"part-{part_index}.mp4"
+                    offset = (stock_cursor // max(1, len(clips))) * 1.3
+                    x = (-18, 0, 18)[part_index % 3]
+                    y = (-30, 0, 30)[part_index % 3]
+                    legacy.run([
+                        "ffmpeg", "-y", "-stream_loop", "-1", "-i", str(source), "-ss", f"{offset:.1f}", "-t", f"{piece_duration:.3f}",
+                        "-vf", f"scale=760:1352:force_original_aspect_ratio=increase,crop=720:1280:(iw-ow)/2+{x}:(ih-oh)/2+{y},eq=contrast=1.04:saturation=1.08,fps=25",
+                        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-threads", "1",
+                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output),
+                    ])
+                    normalized.append(output)
+                    part_index += 1
+            else:
+                if scene.asset_type != "text_scene":
+                    fallbacks.append(f"{scene_index + 1}:{scene.asset_type}")
+                if scene.asset_type == "stock_video" and not clips:
+                    fallbacks.append(f"{scene_index + 1}:stock_video_no_asset")
+                output = _render_text_scene(folder, part_index, scene.seconds, scene, channel)
+                normalized.append(output)
+                part_index += 1
+
+            job["progress"] = 24 + int((scene_index + 1) / max(1, len(specs)) * 50)
             write_job(job)
 
+        if not normalized:
+            raise RuntimeError("Не удалось собрать ни одной сцены")
+
+        render_warning = ""
+        if fallbacks:
+            render_warning = "Часть mixed-media сцен заменена на text scene: " + ", ".join(fallbacks[:8])
+        job.update(render_warning=render_warning)
         (folder / "concat.txt").write_text("".join(f"file '{path.name}'\n" for path in normalized), "utf-8")
         preset = str(payload.get("subtitle_preset") or "punch")
         (folder / "subs.ass").write_text(ass_subtitles_v2(script, duration, preset, tts.alignment), "utf-8")
