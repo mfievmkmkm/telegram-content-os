@@ -24,7 +24,7 @@ def player_report(points: list[list[float]] | list[tuple[float, float, float]], 
     }
     bursts = sorted(distances, reverse=True)[:5]
     share = min(100.0, visible / max(.25, duration) * 100)
-    confidence = "high" if share >= 45 and len(points) >= 80 else "medium" if share >= 20 else "low"
+    confidence = "high" if visible >= 20 and len(points) >= 80 else "medium" if visible >= 8 and len(points) >= 32 else "low"
     return {
         "visible_seconds": round(visible, 1),
         "visibility_percent": round(share, 1),
@@ -44,7 +44,8 @@ def coach_notes(report: dict) -> list[str]:
     zones = report["zones_percent"]
     horizontal = max(("левом фланге", zones["left"]), ("центральном коридоре", zones["centre"]), ("правом фланге", zones["right"]), key=lambda item: item[1])
     notes.append(f"Чаще всего игрок появляется в {horizontal[0]} — {horizontal[1]}% видимых кадров")
-    notes.append(f"Видимость игрока в записи: {report['visibility_percent']}%; уверенность отчёта — {report['confidence']}")
+    confidence_ru={"high":"высокая","medium":"средняя","low":"низкая"}.get(report["confidence"],report["confidence"])
+    notes.append(f"Игрок виден {report['visible_seconds']} сек.; уверенность отчёта — {confidence_ru}")
     if report["burst_timestamps"]:
         moments = ", ".join(f"{int(t // 60)}:{int(t % 60):02d}" for t in report["burst_timestamps"][:3])
         notes.append(f"Самые интенсивные перемещения: {moments}")

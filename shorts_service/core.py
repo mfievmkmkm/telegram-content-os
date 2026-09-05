@@ -1,10 +1,25 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+
+
+def spoken_text(value:str)->str:
+    """Remove visual Telegram decoration before sending a script to TTS."""
+    value=(value or "").replace("⭐"," звёзд ")
+    cleaned=[]
+    for char in value:
+        category=unicodedata.category(char)
+        if char in {"\ufe0f","\u200d","\u20e3"} or category in {"So","Sk"}:
+            cleaned.append(" ")
+        else:
+            cleaned.append(char)
+    return re.sub(r"\s{2,}"," ","".join(cleaned)).strip()
 
 
 def clean_script(value:str)->str:
     text=re.sub(r"<[^>]+>","",value or "")
+    text=spoken_text(text)
     text=text.replace("—",",").replace("–",",")
     text=re.sub(r"[\r\n]+"," ",text); text=re.sub(r"\.{2,}",".",text)
     return re.sub(r"\s{2,}"," ",text).strip(" ,")

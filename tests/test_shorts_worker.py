@@ -1,6 +1,12 @@
 from shorts_service.core import alignment_chunks, ass_subtitles, caption_chunks, clean_script, unique_terms
 
 
+def test_clean_script_removes_visual_emojis_from_voice():
+    value=clean_script("💎 Кит продал 10 ⭐ 🔥")
+    assert "💎" not in value and "🔥" not in value and "⭐" not in value
+    assert "10 звёзд" in value
+
+
 def test_script_is_tight_and_subtitles_are_short():
     script=clean_script("Ты купил вершину — и молчишь...\nТеперь смотри на ликвидность")
     assert "—" not in script and "..." not in script and "\n" not in script

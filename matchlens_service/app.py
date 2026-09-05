@@ -124,6 +124,14 @@ def get_model():
     return model
 
 
+def requested_colour(job):
+    value=str((job.get("target") or {}).get("player","")).lower()
+    aliases={"white":("бел",),"black":("чёр","черн"),"gray":("сер",),"red":("красн",),
+             "orange":("оранж",),"yellow":("жёлт","желт"),"green":("зелён","зелен"),
+             "blue":("син",),"purple":("фиолет",),"pink":("розов",)}
+    return next((colour for colour,words in aliases.items() if any(word in value for word in words)),None)
+
+
 def analyse(job_id):
     job=read_job(job_id)
     try:
@@ -154,11 +162,15 @@ def analyse(job_id):
         for track_id,points in ranked:
             report=player_report(points,duration); report["jersey_color"]=jersey_color(crops.get(track_id)); report["jersey_color_ru"]=COLOR_RU[report["jersey_color"]]
             summary[str(track_id)]=report; raw[str(track_id)]=points
+        wanted=requested_colour(job)
+        suggested=[track_id for track_id,report in summary.items()
+                   if report.get("jersey_color")==wanted and report.get("confidence")!="low"][:8] if wanted else []
         (JOBS/f"{job_id}.tracks.json").write_text(json.dumps(raw),"utf-8")
         if crops:
             folder=ARTIFACTS/job_id; folder.mkdir(parents=True,exist_ok=True); player_wall(crops,summary,folder/"players.jpg"); job["preview_ready"]=True
         job["video_path"]=str(video)
-        job["metrics"]={"duration_seconds":round(duration,1),"players":summary,"ball_detections":len(balls),"sampling_fps":4,
+        job["metrics"]={"duration_seconds":round(duration,1),"players":summary,"suggested_trackers":suggested,
+                        "requested_colour":wanted,"ball_detections":len(balls),"sampling_fps":4,
                         "accuracy_note":"Координаты, цвет формы и движение оценены по кадру. Это не GPS и не официальный event-data"}
         job.update(status="awaiting_selection",progress=70,report_url=f"/v1/reports/{job_id}"); write_job(job)
     except Exception as exc:
@@ -170,6 +182,8 @@ def build_report(job_id):
     try:
         players=job.get("metrics",{}).get("players",{}); selected=players.get(str(job.get("tracker_id")))
         if not selected: raise ValueError("Выбранный tracker_id не найден в матче")
+        if selected.get("confidence")=="low" or float(selected.get("visible_seconds",0))<8:
+            raise ValueError("Игрок виден меньше 8 секунд: честный разбор невозможен. Выбери другой ID или пришли более крупный эпизод")
         points=json.loads((JOBS/f"{job_id}.tracks.json").read_text("utf-8"))[str(job["tracker_id"])]
         folder=ARTIFACTS/job_id; folder.mkdir(parents=True,exist_ok=True); heatmap=np.zeros((720,1280),dtype=np.uint8)
         for _,x,y in points: cv2.circle(heatmap,(int(x*1279),int(y*719)),35,16,-1)

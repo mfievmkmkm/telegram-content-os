@@ -191,10 +191,11 @@ def _designed(lines,seed,scene,channel,format_key):
     palettes={"gifts":((176,255,0),(91,223,255),(202,112,255),(255,186,51),(255,79,96)),
               "liga":((100,255,171),(67,205,255),(255,177,45),(180,139,255),(242,247,250))}
     accent=palettes[channel][seed%5]
-    # Eight genuinely different compositions; deterministic so previews and publications match.
-    layouts=(_cinematic,_dashboard,_meme,_dossier,_editorial,_spotlight,_photo_split,_number_poster)
-    preferred={"мем":2,"рынок_за_минуту":1,"data_desk":1,"разбор_ошибки":3,"course_insight":4,
-               "обучение":4,"сигнал_или_шум":5,"тренировка":6,"история":7}
+    # Only scene-led layouts remain in production. The old flat black dashboards
+    # looked repetitive and are deliberately excluded from this renderer pool.
+    layouts=(_cinematic,_photo_split,_number_poster)
+    preferred={"мем":0,"рынок_за_минуту":2,"data_desk":1,"разбор_ошибки":0,"course_insight":1,
+               "обучение":1,"сигнал_или_шум":2,"тренировка":0,"история":2}
     index=preferred.get(format_key,seed%len(layouts))
     renderer=layouts[index]
     if renderer in (_cinematic,_photo_split,_number_poster): return renderer(lines,seed,scene,channel)

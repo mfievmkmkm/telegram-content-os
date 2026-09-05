@@ -533,13 +533,16 @@ async def match_submit(c:CallbackQuery,state:FSMContext):
     await c.message.answer(text,parse_mode=ParseMode.HTML,reply_markup=match_job_keyboard(local_id))
 
 async def show_match_status(target,local_id,edit=False):
-    row=await matchlens.refresh(local_id); tracker_ids=[]
+    row=await matchlens.refresh(local_id); tracker_ids=[]; suggested=[]
     try: metrics_raw=row["metrics_json"]
     except (KeyError,IndexError): metrics_raw=None
     if metrics_raw:
-        try: tracker_ids=list((json.loads(metrics_raw) or {}).get("players",{}))
+        try:
+            decoded=json.loads(metrics_raw) or {}; tracker_ids=list(decoded.get("players",{})); suggested=decoded.get("suggested_trackers") or []
         except (TypeError,ValueError): pass
-    ids=f"\nНайдены игроки: <code>{html.escape(', '.join(tracker_ids[:24]))}</code>" if tracker_ids else ""
+    if suggested: tracker_ids=[*map(str,suggested),*[x for x in tracker_ids if x not in set(map(str,suggested))]]
+    recommendation=f"\nПодходят по форме и качеству: <code>{html.escape(', '.join(map(str,suggested)))}</code>" if suggested else ""
+    ids=f"\nНайдены треки: <code>{html.escape(', '.join(tracker_ids[:24]))}</code>{recommendation}" if tracker_ids else ""
     hint=f"{ids}\n\nНажми на ID своего футболиста ниже" if row["status"]=="awaiting_selection" else ""
     error=f"\nОшибка: {html.escape(row['error'])}" if row["error"] else ""
     text=f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{hint}{error}"

@@ -24,6 +24,7 @@ for folder in (JOBS,TASKS): folder.mkdir(parents=True,exist_ok=True)
 API_KEY=os.getenv("SHORTS_API_KEY","").strip(); PEXELS_KEY=os.getenv("PEXELS_API_KEY","").strip()
 ELEVEN_KEY=os.getenv("ELEVENLABS_API_KEY","").strip(); ELEVEN_VOICE=os.getenv("ELEVENLABS_VOICE_ID","").strip()
 ELEVEN_MODEL=os.getenv("ELEVENLABS_MODEL_ID","eleven_multilingual_v2").strip()
+REQUIRE_ELEVEN=os.getenv("SHORTS_REQUIRE_ELEVENLABS","true").lower() in {"1","true","yes","on"}
 app=FastAPI(title="Content OS Shorts Worker",version="1.0")
 
 
@@ -42,7 +43,7 @@ def write_job(job):
 
 @app.get("/health")
 def health(): return {"ok":True,"service":"content-os-shorts","pexels":bool(PEXELS_KEY),"persistent":str(DATA)=="/data",
-                     "voice":"elevenlabs" if ELEVEN_KEY and ELEVEN_VOICE else "edge"}
+                     "voice":"elevenlabs" if ELEVEN_KEY and ELEVEN_VOICE else "blocked" if REQUIRE_ELEVEN else "edge"}
 
 
 @app.post("/api/v1/videos")
@@ -124,6 +125,8 @@ async def synthesize(script:str,path:Path,voice:str,rate:str)->tuple[str,dict|No
                     eleven_error=f"ElevenLabs HTTP {response.status}: {(await response.text())[:160]}"
         except Exception as exc: eleven_error=f"ElevenLabs {type(exc).__name__}: {str(exc)[:140]}"
     else: eleven_error="ELEVENLABS_API_KEY или ELEVENLABS_VOICE_ID не заполнены"
+    if REQUIRE_ELEVEN:
+        raise RuntimeError(f"ElevenLabs обязателен: {eleven_error}")
     await edge_tts.Communicate(script,voice=voice,rate=rate,pitch="+2Hz").save(str(path)); return "edge",None,eleven_error
 
 
