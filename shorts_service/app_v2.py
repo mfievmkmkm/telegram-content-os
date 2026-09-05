@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 import shutil
 import subprocess
@@ -16,13 +15,29 @@ from starlette.background import BackgroundTask
 try:
     from . import app as legacy
     from .core import clean_script, unique_terms
-    from .scene_media import SUPPORTED_ASSET_TYPES, compile_scene_specs, text_card_filter, write_text_card_copy
+    from .scene_media import (
+        IMAGE_ASSET_TYPES,
+        SUPPORTED_ASSET_TYPES,
+        compile_scene_specs,
+        download_image_asset,
+        image_filter,
+        text_card_filter,
+        write_text_card_copy,
+    )
     from .subtitles import ass_subtitles_v2
     from .tts import TTSRouter
 except ImportError:
     import app as legacy
     from core import clean_script, unique_terms
-    from scene_media import SUPPORTED_ASSET_TYPES, compile_scene_specs, text_card_filter, write_text_card_copy
+    from scene_media import (
+        IMAGE_ASSET_TYPES,
+        SUPPORTED_ASSET_TYPES,
+        compile_scene_specs,
+        download_image_asset,
+        image_filter,
+        text_card_filter,
+        write_text_card_copy,
+    )
     from subtitles import ass_subtitles_v2
     from tts import TTSRouter
 
@@ -33,7 +48,7 @@ TASKS = legacy.TASKS
 API_KEY = legacy.API_KEY
 PEXELS_KEY = legacy.PEXELS_KEY
 TTS = TTSRouter()
-app = FastAPI(title="Content OS Shorts Worker", version="2.1")
+app = FastAPI(title="Content OS Shorts Worker", version="2.2")
 
 
 @app.on_event("startup")
@@ -59,7 +74,7 @@ def health():
     return {
         "ok": True,
         "service": "content-os-shorts",
-        "version": "2.1",
+        "version": "2.2",
         "pexels": bool(PEXELS_KEY),
         "persistent": str(DATA) == "/data",
         "tts": providers,
@@ -67,6 +82,7 @@ def health():
         "staged": True,
         "subtitle_presets": ["punch", "clean", "sport", "meme"],
         "asset_types": sorted(SUPPORTED_ASSET_TYPES),
+        "remote_image_assets": sorted(IMAGE_ASSET_TYPES),
         "unsupported_asset_policy": "text_scene_fallback",
     }
 
@@ -135,6 +151,16 @@ def _render_text_scene(folder: Path, index: int, seconds: float, scene, channel:
     return output
 
 
+def _render_image_scene(folder: Path, index: int, seconds: float, image: Path) -> Path:
+    output = folder / f"part-{index}.mp4"
+    legacy.run([
+        "ffmpeg", "-y", "-loop", "1", "-i", str(image), "-t", f"{seconds:.3f}",
+        "-vf", image_filter(), "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-threads", "1",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output),
+    ])
+    return output
+
+
 async def render(task_id: str, payload: dict):
     job = read_job(task_id)
     folder = TASKS / task_id
@@ -177,10 +203,9 @@ async def render(task_id: str, payload: dict):
 
         for scene_index, scene in enumerate(specs):
             if scene.asset_type == "stock_video" and clips:
-                # Keep cuts energetic while respecting the planned scene duration.
                 pieces = max(1, math.ceil(scene.seconds / 2.2))
                 piece_duration = scene.seconds / pieces
-                for piece in range(pieces):
+                for _ in range(pieces):
                     source = clips[stock_cursor % len(clips)]
                     stock_cursor += 1
                     output = folder / f"part-{part_index}.mp4"
@@ -195,13 +220,20 @@ async def render(task_id: str, payload: dict):
                     ])
                     normalized.append(output)
                     part_index += 1
+            elif scene.asset_type in IMAGE_ASSET_TYPES and scene.asset_ref:
+                try:
+                    image_path = await download_image_asset(scene.asset_ref, folder / f"asset-{scene_index}.img")
+                    normalized.append(_render_image_scene(folder, part_index, scene.seconds, image_path))
+                    part_index += 1
+                except Exception as exc:
+                    fallbacks.append(f"{scene_index + 1}:{scene.asset_type}({type(exc).__name__})")
+                    normalized.append(_render_text_scene(folder, part_index, scene.seconds, scene, channel))
+                    part_index += 1
             else:
                 if scene.asset_type != "text_scene":
-                    fallbacks.append(f"{scene_index + 1}:{scene.asset_type}")
-                if scene.asset_type == "stock_video" and not clips:
-                    fallbacks.append(f"{scene_index + 1}:stock_video_no_asset")
-                output = _render_text_scene(folder, part_index, scene.seconds, scene, channel)
-                normalized.append(output)
+                    reason = "stock_video_no_asset" if scene.asset_type == "stock_video" else f"{scene.asset_type}_no_ref"
+                    fallbacks.append(f"{scene_index + 1}:{reason}")
+                normalized.append(_render_text_scene(folder, part_index, scene.seconds, scene, channel))
                 part_index += 1
 
             job["progress"] = 24 + int((scene_index + 1) / max(1, len(specs)) * 50)
@@ -231,7 +263,6 @@ async def render(task_id: str, payload: dict):
     except Exception as exc:
         job.update(state=-1, stage="failed", error=f"{type(exc).__name__}: {str(exc)[:700]}")
         write_job(job)
-        # Keep status JSON, aggressively remove disposable media to avoid Railway disk exhaustion.
         for item in folder.glob("*"):
             try:
                 if item.is_file() and item.name != "payload.json":
