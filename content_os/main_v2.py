@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from . import __main__ as legacy
+from .review_runtime import install_review
 from .v2_runtime import install
 
 
@@ -10,6 +11,7 @@ from .v2_runtime import install
 # scheduling, publishing, shop, analytics and existing commands until each domain
 # is migrated deliberately.
 studio, v2_router = install(legacy)
+director, editorial_memory, review_router = install_review(legacy)
 
 
 async def main():
