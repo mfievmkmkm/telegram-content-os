@@ -7,8 +7,10 @@ from datetime import datetime
 from aiogram.enums import ParseMode
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
+from .campaigns import CampaignRef
 from .content_quality import build_fingerprint
 from .formatting import plain_text, telegram_html
+from .growth.cta import telegram_deep_link
 from .visual_renderer import render_card
 
 
@@ -125,10 +127,27 @@ class PublishingService:
         legacy = self.legacy
         if not legacy.settings.shop_cta_every or int(draft["id"]) % legacy.settings.shop_cta_every != 0:
             return None, None
-        me = await (legacy.shop_bot or legacy.bot).get_me()
-        slug = "service_liga" if draft["channel_key"] == "liga" else "service_gifts"
-        label = "Разобрать мой эпизод" if draft["channel_key"] == "liga" else "Проверить мой Gift"
-        sales_url = f"https://t.me/{me.username}?start={slug}"
+
+        label = "Разобрать мой эпизод" if draft["channel_key"] == "liga" else "Открыть Gifts Intelligence"
+        if legacy.shop_bot:
+            me = await legacy.shop_bot.get_me()
+            raw_format = str(draft["format_key"] or "").lower()
+            format_key = raw_format if raw_format in {"shorts", "meme", "card"} else "post"
+            ref = CampaignRef(
+                project=str(draft["channel_key"]),
+                content_id=int(draft["id"]),
+                format_key=format_key,
+                offer="liga-episode" if draft["channel_key"] == "liga" else "gifts-access",
+                campaign="organic",
+            )
+            tracked = telegram_deep_link(me.username, ref, label)
+            sales_url = tracked.url
+        else:
+            # Backward-compatible fallback when Shop has not been split into its own bot.
+            me = await legacy.bot.get_me()
+            slug = "service_liga" if draft["channel_key"] == "liga" else "service_gifts"
+            sales_url = f"https://t.me/{me.username}?start={slug}"
+
         if legacy.premium_publisher.ready:
             return None, f'\n\n<a href="{sales_url}"><b>{html.escape(label)} →</b></a>'
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label, url=sales_url)]]), None
