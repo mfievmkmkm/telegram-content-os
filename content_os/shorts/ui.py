@@ -55,7 +55,11 @@ def review_keyboard(job_id: int | str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎙 Голос", callback_data=f"shortsv2:voices:{key}"),
             InlineKeyboardButton(text="🎨 Стиль", callback_data=f"shortsv2:styles:{key}"),
         ],
-        [InlineKeyboardButton(text="‹ К посту", callback_data=f"back:{key}")],
+        [
+            InlineKeyboardButton(text="💬 Субтитры", callback_data=f"shortsv2:subtitles:{key}"),
+            InlineKeyboardButton(text="🎞 Другие кадры", callback_data=f"shortsv2:scenes:{key}"),
+        ],
+        [InlineKeyboardButton(text="‹ К посту", callback_data=f"shortsv2:back:{key}")],
     ])
 
 
@@ -77,3 +81,27 @@ def style_keyboard(job_id: int | str, current: str = "punchy") -> InlineKeyboard
         rows.append([InlineKeyboardButton(text=f"{mark}{preset.title}", callback_data=f"shortsv2:style:{key}:{job_id}")])
     rows.append([InlineKeyboardButton(text="‹ Сценарий", callback_data=f"shortsv2:review:{job_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def subtitle_keyboard(job_id: int | str, current: str = "punch") -> InlineKeyboardMarkup:
+    rows = []
+    for key, title in SUBTITLE_PRESETS.items():
+        mark = "✓ " if key == current else ""
+        rows.append([InlineKeyboardButton(text=f"{mark}{title}", callback_data=f"shortsv2:subtitle:{key}:{job_id}")])
+    rows.append([InlineKeyboardButton(text="‹ Сценарий", callback_data=f"shortsv2:review:{job_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def rendered_keyboard(job_id: int | str) -> InlineKeyboardMarkup:
+    key = str(job_id)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎙 Другой голос", callback_data=f"shortsv2:voices:{key}"),
+            InlineKeyboardButton(text="🎞 Другие кадры", callback_data=f"shortsv2:scenes:{key}"),
+        ],
+        [
+            InlineKeyboardButton(text="💬 Другие субтитры", callback_data=f"shortsv2:subtitles:{key}"),
+            InlineKeyboardButton(text="✂️ Короче", callback_data=f"shortsv2:rewrite:short:{key}"),
+        ],
+        [InlineKeyboardButton(text="🔥 Агрессивнее", callback_data=f"shortsv2:rewrite:harder:{key}")],
+    ])
