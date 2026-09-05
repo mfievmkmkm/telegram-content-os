@@ -8,9 +8,10 @@ from aiogram.enums import ParseMode
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 
 from .creative_director import render_report
+from .content_doctor import diagnose
 from .director_service import ContentDirectorService
 from .editorial_memory import EditorialMemory
-from .visual_renderer import preview_variants, render_card
+from .visual_renderer import fresh_page_offset, layout_key, preview_variants, render_card
 
 
 log = logging.getLogger("content-os.review-v2")
@@ -81,7 +82,7 @@ def install_review(legacy):
             used = {int(value.rsplit(":", 1)[-1]) for value in recent[-2:] if value.startswith("variant:") and value.rsplit(":", 1)[-1].isdigit()}
             selected = next((variant for variant in range(3) if variant not in used), 0)
             memory.select_variant(draft_id, selected, draft["text"])
-            memory.remember_visual(channel, f"variant:{selected}")
+            memory.remember_visual(channel, layout_key(selected))
 
         if wants_card:
             try:
@@ -101,13 +102,18 @@ def install_review(legacy):
                 except Exception:
                     log.info("Source image unavailable during v2 review: %s", image)
 
+        doctor=diagnose(draft["text"])
+        metrics="  ".join(f"{item.label} {item.score}" for item in doctor.metrics)
         quality = f"CD {report.score}/100"
         if result.rewrites:
             quality += f" · исправлено ×{result.rewrites}"
         cfg = legacy.CHANNELS[channel]
         await legacy.bot.send_message(
             int(chat),
-            f"{cfg['emoji']} <b>{cfg['title']} · {draft['format_key']} · хук {draft['hook_score']}/5 · {quality}</b>\n\n{legacy.render(channel, draft['text'])}",
+            f"{cfg['emoji']} <b>{cfg['title']} · {draft['format_key']}</b>\n"
+            f"<code>{html.escape(metrics)}</code>\n"
+            f"<i>{quality} · originality {round((1-result.decision.similarity)*100)}/100</i>\n\n"
+            f"{legacy.render(channel, draft['text'])}",
             parse_mode=ParseMode.HTML,
             reply_markup=review_keyboard(draft_id),
             disable_web_page_preview=True,
@@ -116,15 +122,18 @@ def install_review(legacy):
     @router.callback_query(F.data.startswith("visualv2:options:"))
     async def visual_options(c: CallbackQuery):
         if not legacy.admin(c): return
-        raw = c.data.rsplit(":", 1)[-1]
+        parts = c.data.split(":")
+        raw = parts[2] if len(parts) > 2 else ""
+        explicit_offset = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None
         if not raw.isdigit(): return await c.answer("Некорректный пост", show_alert=True)
         draft = legacy.db.draft(int(raw))
         if not draft: return await c.answer("Черновик не найден", show_alert=True)
+        offset = explicit_offset if explicit_offset is not None else fresh_page_offset(memory.recent_visuals(draft["channel_key"]))
         await c.answer("Готовлю три варианта…")
         try:
-            images = preview_variants(draft["channel_key"], draft["text"], draft["format_key"], 3)
+            images = preview_variants(draft["channel_key"], draft["text"], draft["format_key"], 3, offset)
             media = [
-                InputMediaPhoto(media=BufferedInputFile(image, filename=f"preview-{raw}-{index}.png"), caption=f"Вариант {chr(65 + index)}")
+                InputMediaPhoto(media=BufferedInputFile(image, filename=f"preview-{raw}-{offset + index}.png"), caption=f"Вариант {chr(65 + offset + index)}")
                 for index, image in enumerate(images)
             ]
             await c.message.answer_media_group(media)
@@ -133,9 +142,14 @@ def install_review(legacy):
             return await c.message.answer(f"❌ Карточки не собраны: {html.escape(str(exc)[:300])}", parse_mode=ParseMode.HTML)
         selected = memory.selected_variant(raw)
         rows = [[
-            InlineKeyboardButton(text=("✓ " if selected == index else "") + chr(65 + index), callback_data=f"visualv2:choose:{raw}:{index}")
-            for index in range(3)
-        ], [InlineKeyboardButton(text="↩️ К посту", callback_data=f"back:{raw}")]]
+            InlineKeyboardButton(text=("✓ " if selected == offset + index else "") + chr(65 + offset + index), callback_data=f"visualv2:choose:{raw}:{offset + index}")
+            for index in range(len(images))
+        ]]
+        if offset < 6:
+            rows.append([InlineKeyboardButton(text="✨ Ещё 3 композиции", callback_data=f"visualv2:options:{raw}:{offset + 3}")])
+        if offset:
+            rows.append([InlineKeyboardButton(text="← Первые варианты", callback_data=f"visualv2:options:{raw}:0")])
+        rows.append([InlineKeyboardButton(text="↩️ К посту", callback_data=f"back:{raw}")])
         await c.message.answer("🎨 <b>Какой визуал оставляем?</b>", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
     @router.callback_query(F.data.startswith("visualv2:choose:"))
@@ -148,7 +162,7 @@ def install_review(legacy):
         draft = legacy.db.draft(draft_id)
         if not draft: return await c.answer("Черновик не найден", show_alert=True)
         memory.select_variant(draft_id, variant, draft["text"])
-        memory.remember_visual(draft["channel_key"], f"variant:{variant}")
+        memory.remember_visual(draft["channel_key"], layout_key(variant))
         await c.answer(f"Вариант {chr(65 + variant)} выбран", show_alert=True)
         try:
             image = render_card(draft["channel_key"], draft["text"], draft["format_key"], variant)

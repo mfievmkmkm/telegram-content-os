@@ -2,7 +2,7 @@ import io
 
 from PIL import Image, ImageDraw
 
-from content_os.brand_cards import LIGA_SCENES, SCENES, _cinematic, _pick_liga_scene, _wrap_pixels, font, gift_card, liga_card, use_gift_card
+from content_os.brand_cards import LIGA_SCENES, SCENES, SCENE_DIR, _cinematic, _pick_liga_scene, _wrap_pixels, font, gift_card, liga_card, use_gift_card
 
 def test_gift_card_is_a_real_png():
     data=gift_card("💎 <b>Твой floor врёт тебе</b>\n\nЛиквидность важнее редкости","разбор_ошибки")
@@ -35,12 +35,23 @@ def test_liga_card_is_a_real_png():
     assert len(data)>10_000
 
 def test_liga_scene_matches_subject():
-    assert _pick_liga_scene("Почему вратарь опоздал с сейвом",1) in {"goalkeeper.webp","keeper_flight.webp"}
+    assert _pick_liga_scene("Почему вратарь опоздал с сейвом",1) in {"goalkeeper.webp","keeper_flight.webp","3d_keeper_catch.webp"}
     assert _pick_liga_scene("Как вернуть место в составе после замены",1) in {"golden_bench.webp","empty_bench.webp"}
     assert _pick_liga_scene("Упражнение на скорость и конусы",1) in {"night_training.webp","sprint_rain.webp"}
     assert _pick_liga_scene("Тактический разбор эпизода",1) in {"tactics_lab.webp","coach_hologram.webp"}
     assert _pick_liga_scene("Победа в единоборстве",1) == "duel_fire.webp"
-    assert _pick_liga_scene("Как поставить удар",1) == "neon_strike.webp"
+    assert _pick_liga_scene("Как поставить удар",1) in {"neon_strike.webp","3d_boot_impact.webp"}
+
+
+def test_generated_3d_scene_library_is_available():
+    expected = {
+        "3d_gift_vault.webp", "3d_market_whale.webp", "3d_gift_auction.webp",
+        "3d_fomo_cart.webp", "3d_boot_impact.webp", "3d_keeper_catch.webp",
+    }
+    assert expected <= set(SCENES) | set(LIGA_SCENES)
+    for name in expected:
+        with Image.open(SCENE_DIR / name) as image:
+            assert image.size == (1080, 1080)
 
 def test_meme_cards_use_distinct_editorial_layouts():
     gift=gift_card("Когда купил вершину и назвал это стратегией","мем")

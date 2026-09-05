@@ -64,6 +64,13 @@ class ShortsStudio:
         normalized = preset_key if preset_key in SUBTITLE_PRESETS else "punch"
         return self.sessions.choose_subtitle(job_id, normalized)
 
+    async def upload_voice(self, job_id: int | str, content: bytes, filename: str) -> ShortBrief:
+        asset_ref = await self.renderer.upload_audio(content, filename)
+        brief = self.sessions.choose_voice(job_id, "uploaded")
+        brief.metadata["voice_asset_ref"] = asset_ref
+        self.sessions.save(job_id, brief)
+        return brief
+
     def approve(self, job_id: int | str) -> ShortBrief:
         return self.sessions.approve(job_id)
 
@@ -71,7 +78,7 @@ class ShortsStudio:
         brief = self._required(job_id)
         if not brief.approved:
             raise RuntimeError("Сначала подтверди сценарий")
-        return await self.renderer.render(self.worker_payload(brief), progress)
+        return await self.renderer.render(self.worker_payload(brief, studio_job_id=job_id), progress)
 
     def _scene_payloads(self, brief: ShortBrief) -> list[dict]:
         scenes = [asdict(scene) for scene in brief.scenes]
@@ -92,9 +99,9 @@ class ShortsStudio:
                 scene["asset_ref"] = asset_ref
         return scenes
 
-    def worker_payload(self, brief: ShortBrief) -> dict:
+    def worker_payload(self, brief: ShortBrief, studio_job_id: int | str | None = None) -> dict:
         preset = voice(brief.voice_preset)
-        return {
+        payload = {
             "video_subject": brief.title,
             "video_script": brief.voiceover,
             "video_aspect": "9:16",
@@ -109,6 +116,7 @@ class ShortsStudio:
             "voice_provider": preset.provider,
             "voice_name": preset.voice,
             "voice_rate": preset.speed,
+            "voice_asset_ref": brief.metadata.get("voice_asset_ref", ""),
             "subtitle_enabled": True,
             "subtitle_preset": brief.subtitle_preset,
             "scenes": self._scene_payloads(brief),
@@ -117,6 +125,9 @@ class ShortsStudio:
             "channel": brief.channel,
             "delivery_preset": brief.delivery_preset,
         }
+        if studio_job_id is not None:
+            payload["studio_job_id"] = str(studio_job_id)
+        return payload
 
     def _required(self, job_id: int | str) -> ShortBrief:
         brief = self.sessions.load(job_id)

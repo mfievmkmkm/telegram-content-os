@@ -40,6 +40,20 @@ class ShortRenderClient:
         except Exception as exc:
             return False, f"{type(exc).__name__}: {str(exc)[:120]}"
 
+    async def upload_audio(self, content: bytes, filename: str = "voice.mp3") -> str:
+        if not self.ready:
+            raise RuntimeError("Shorts Worker ещё не подключён")
+        if not content or len(content) > 12 * 1024 * 1024:
+            raise ValueError("Озвучка должна быть не больше 12 МБ")
+        form = aiohttp.FormData()
+        form.add_field("file", content, filename=filename, content_type="application/octet-stream")
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=150), headers=self.headers) as session:
+            result = self._data(await self._request_json(session, "POST", "/api/v1/audio-assets", data=form))
+        asset_ref = str(result.get("asset_ref") or "").strip()
+        if not asset_ref:
+            raise RuntimeError("Shorts Worker не сохранил озвучку")
+        return asset_ref
+
     async def render(self, payload: dict, progress=None) -> tuple[str, bytes, str, str]:
         if not self.ready:
             raise RuntimeError("Shorts Worker ещё не подключён")
@@ -52,7 +66,15 @@ class ShortRenderClient:
             last_progress = -1
             while asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(8)
-                status = self._data(await self._request_json(session, "GET", f"/api/v1/tasks/{task_id}"))
+                try:
+                    status = self._data(await self._request_json(session, "GET", f"/api/v1/tasks/{task_id}"))
+                except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as exc:
+                    if "task not found" in str(exc).lower():
+                        raise RuntimeError("Shorts Worker перезапустился во время монтажа. Запусти рендер ещё раз — сценарий и настройки сохранены") from exc
+                    if self._transient(exc):
+                        await asyncio.sleep(10)
+                        continue
+                    raise
                 current = int(status.get("progress", 0) or 0)
                 if progress and current != last_progress:
                     await progress(current)
@@ -92,3 +114,10 @@ class ShortRenderClient:
     @staticmethod
     def _data(response):
         return response.get("data", response) if isinstance(response, dict) else {}
+
+    @staticmethod
+    def _transient(exc: Exception) -> bool:
+        if isinstance(exc, (aiohttp.ClientError, asyncio.TimeoutError)):
+            return True
+        value = str(exc).lower()
+        return any(marker in value for marker in ("http 502", "http 503", "http 504", "failed to respond", "connection reset"))

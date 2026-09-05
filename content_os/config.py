@@ -47,6 +47,8 @@ class Settings:
     api_football_url: str
     football_leagues: list[str]
     shop_cta_every: int
+    miniapp_port: int
+    miniapp_public_url: str
     channels: dict[str, str]
     schedules: dict[str, list[str]]
 
@@ -91,6 +93,8 @@ def load_settings() -> Settings:
         api_football_url=os.getenv("API_FOOTBALL_URL", "https://v3.football.api-sports.io").strip().rstrip("/"),
         football_leagues=csv("FOOTBALL_LEAGUES", "39,140,135,78,61,2,3"),
         shop_cta_every=max(0,int(os.getenv("SHOP_CTA_EVERY", "4"))),
+        miniapp_port=max(0, int(os.getenv("MINIAPP_PORT") or os.getenv("PORT") or "0")),
+        miniapp_public_url=os.getenv("MINIAPP_PUBLIC_URL", "").strip().rstrip("/"),
         channels={"liga": os.getenv("LIGA_CHANNEL_ID", "@LigaProgress"),
                   "gifts": os.getenv("GIFTS_CHANNEL_ID", "@GiftsIntelligence")},
         schedules={"liga": csv("LIGA_DRAFT_TIMES", "09:00,15:00,20:00"),

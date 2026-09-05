@@ -42,6 +42,10 @@ def subsystem_statuses(env: Mapping[str, str]) -> tuple[SubsystemStatus, ...]:
         statuses.append(_status("matchlens", "MatchLens", env, ("MATCHLENS_BASE_URL", "MATCHLENS_API_KEY"), "experimental"))
     else:
         statuses.append(SubsystemStatus("matchlens", "MatchLens", True, (), "experimental/off"))
+    if str(env.get("MINIAPP_PORT", "0")).strip() not in {"", "0"}:
+        statuses.append(_status("miniapp", "Telegram Mini App", env, ("MINIAPP_PUBLIC_URL",)))
+    else:
+        statuses.append(SubsystemStatus("miniapp", "Telegram Mini App", True, (), "off"))
     return tuple(statuses)
 
 

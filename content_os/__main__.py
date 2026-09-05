@@ -11,7 +11,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BotCommand, BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, Message
+from aiogram.types import BotCommand, BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, MenuButtonWebApp, Message, WebAppInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .channels import CHANNELS, SERIES
@@ -1086,7 +1086,8 @@ async def main():
     await bot.set_my_commands([BotCommand(command="start",description="главное меню"),BotCommand(command="menu",description="главное меню"),BotCommand(command="generate",description="создать пост"),
       BotCommand(command="scheduled",description="очередь публикаций"),BotCommand(command="games",description="матчи сегодня"),
       BotCommand(command="match",description="разобрать видео"),BotCommand(command="status",description="состояние системы")])
-    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    menu = MenuButtonWebApp(text="Content OS", web_app=WebAppInfo(url=settings.miniapp_public_url)) if settings.miniapp_public_url else MenuButtonCommands()
+    await bot.set_chat_menu_button(menu_button=menu)
     for channel,times in settings.schedules.items():
         for i,value in enumerate(times):
             hour,minute=map(int,value.split(":")); scheduler.add_job(generate,"cron",args=[channel],hour=hour,minute=minute,id=f"{channel}_{i}")

@@ -21,6 +21,10 @@ class DoctorFlow(StatesGroup):
     waiting_text = State()
 
 
+class ShortsFlow(StatesGroup):
+    waiting_voice = State()
+
+
 def draft_keyboard(draft_id: int | str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ В канал", callback_data=f"publish:{draft_id}"), InlineKeyboardButton(text="⏰ Выбрать время", callback_data=f"schedule:{draft_id}")],
@@ -133,11 +137,34 @@ def install(legacy):
         await c.answer(); await c.message.answer("🎙 <b>Голос</b>\n\nРусский SpeechKit — основной автоматический режим. ElevenLabs оставляем как premium-вариант.",parse_mode=ParseMode.HTML,reply_markup=voice_keyboard(job_id,brief.channel,brief.voice_preset))
 
     @router.callback_query(F.data.startswith("shortsv2:voice:"))
-    async def choose_voice(c: CallbackQuery):
+    async def choose_voice(c: CallbackQuery, state: FSMContext):
         if not legacy.admin(c): return
         parts=c.data.split(":")
         if len(parts)!=4: return await c.answer("Некорректный голос",show_alert=True)
-        _,_,preset,job_id=parts; brief=studio.choose_voice(job_id,preset); await c.answer("Голос выбран"); await c.message.answer(brief_text(brief),parse_mode=ParseMode.HTML,reply_markup=review_keyboard(job_id))
+        _,_,preset,job_id=parts
+        if preset=="uploaded":
+            await state.set_state(ShortsFlow.waiting_voice); await state.update_data(shorts_job_id=job_id); await c.answer()
+            return await c.message.answer("🎙 <b>Пришли готовую озвучку</b>\n\nMP3, M4A или голосовое сообщение · до 12 МБ. Текст сценария менять не буду.",parse_mode=ParseMode.HTML)
+        brief=studio.choose_voice(job_id,preset); await c.answer("Голос выбран"); await c.message.answer(brief_text(brief),parse_mode=ParseMode.HTML,reply_markup=review_keyboard(job_id))
+
+    @router.message(ShortsFlow.waiting_voice, F.voice | F.audio | F.document)
+    async def uploaded_voice(message: Message, state: FSMContext):
+        if not legacy.admin(message): return
+        state_data=await state.get_data(); job_id=str(state_data.get("shorts_job_id") or "")
+        media=message.voice or message.audio or message.document
+        size=int(getattr(media,"file_size",0) or 0)
+        if not job_id or not media: return await message.answer("Сессия Shorts потеряна — открой сценарий заново")
+        if size>12*1024*1024: return await message.answer("❌ Файл больше 12 МБ. Сожми аудио и пришли ещё раз")
+        wait=await message.answer("🎙 Проверяю и сохраняю озвучку…")
+        try:
+            info=await legacy.bot.get_file(media.file_id); stream=await legacy.bot.download_file(info.file_path)
+            content=stream.read(); filename=getattr(media,"file_name",None) or "voice.ogg"
+            brief=await studio.upload_voice(job_id,content,filename)
+        except Exception as exc:
+            log.exception("Uploaded Shorts voice failed")
+            return await wait.edit_text(f"❌ Озвучка не принята: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+        await state.clear(); await wait.delete()
+        await message.answer(brief_text(brief),parse_mode=ParseMode.HTML,reply_markup=review_keyboard(job_id))
 
     @router.callback_query(F.data.startswith("shortsv2:styles:"))
     async def styles(c: CallbackQuery):

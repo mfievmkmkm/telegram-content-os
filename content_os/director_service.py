@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from .content_quality import QualityDecision, build_fingerprint, review_candidate
 from .editorial_memory import EditorialMemory
+from .fact_layer import FactStore
 
 
 @dataclass(slots=True)
@@ -24,6 +25,7 @@ class ContentDirectorService:
         self.editor = editor
         self.db = database
         self.memory = memory or EditorialMemory(database)
+        self.facts = FactStore(database)
 
     def evaluate(self, draft) -> QualityDecision:
         channel = draft["channel_key"]
@@ -39,6 +41,7 @@ class ContentDirectorService:
                 format_key="legacy",
             )
             history.append((fp, text))
+        fact_pack=self.facts.load(draft["id"])
         return review_candidate(
             text=draft["text"],
             channel=channel,
@@ -46,6 +49,7 @@ class ContentDirectorService:
             angle=str(draft["format_key"]),
             format_key=str(draft["format_key"]),
             history=history[-50:],
+            fact_numbers=fact_pack.numbers if fact_pack else None,
         )
 
     async def polish(self, draft_id: int | str, max_rewrites: int = 2) -> DirectorResult:

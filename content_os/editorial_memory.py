@@ -54,12 +54,12 @@ class EditorialMemory:
     def variant_for_text(self, text: str) -> int:
         value = self.db.get(f"v2:visual_text:{signature(text)}")
         try:
-            return max(0, min(int(value), 2)) if value is not None else 0
+            return max(0, min(int(value), 7)) if value is not None else 0
         except (TypeError, ValueError):
             return 0
 
     def select_variant(self, draft_id: int | str, variant: int, text: str = "") -> None:
-        normalized = max(0, min(int(variant), 2))
+        normalized = max(0, min(int(variant), 7))
         self.db.set(f"v2:visual_variant:{draft_id}", str(normalized))
         if text:
             self.db.set(f"v2:visual_text:{signature(text)}", str(normalized))

@@ -26,3 +26,5 @@ def test_visual_memory_and_variant():
     assert memory.selected_variant(7) is None
     memory.select_variant(7, 2)
     assert memory.selected_variant(7) == 2
+    memory.select_variant(7, 7)
+    assert memory.selected_variant(7) == 7

@@ -38,6 +38,9 @@ class SupabaseDatabase:
         rows=self.client.table("content_os_drafts").select("*").eq("id",draft_id).limit(1).execute().data
         return rows[0] if rows else None
 
+    def recent_drafts(self,channel_key,limit=20):
+        return self.client.table("content_os_drafts").select("*").eq("channel_key",channel_key).neq("status","deleted").order("id",desc=True).limit(limit).execute().data
+
     def update(self,draft_id,**fields):
         allowed={"text","hook_score","status","scheduled_at","published_at","published_message_id"}
         clean={k:v for k,v in fields.items() if k in allowed}
@@ -80,6 +83,9 @@ class SupabaseDatabase:
         engagement=((reactions+forwards*2)/views*100) if views else 0
         self.client.table("content_os_post_metrics").insert({"draft_id":draft_id,"views":views,"reactions":reactions,
           "forwards":forwards,"engagement":engagement,"captured_at":datetime.now(self.timezone).isoformat()}).execute()
+
+    def metrics_for_draft(self,draft_id,limit=100):
+        return self.client.table("content_os_post_metrics").select("*").eq("draft_id",draft_id).order("captured_at").limit(limit).execute().data
 
     def analytics_summary(self,limit=10):
         drafts=self.client.table("content_os_drafts").select("id,channel_key,format_key,hook_score,text").eq("status","published").execute().data

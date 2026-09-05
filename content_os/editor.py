@@ -9,6 +9,7 @@ from .hooks import score_hook
 from .sources import collect_items
 from .formatting import clean_generated_post, decorate_post, plain_text
 from .course_retrieval import select_course_snippets
+from .fact_layer import FactPack, FactStore
 
 
 class Editor:
@@ -101,7 +102,9 @@ class Editor:
             text=await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,f"Перепиши с более сильным хуком. Данные не меняй.\n{text}",.9)
             text=await self.finish(cfg,text,"Не делай выводов, которых нет в данных."); score,_=score_hook(plain_text(text))
         text=decorate_post(text,"gifts")
-        return self.db.save_draft("gifts","data_desk",text,score,"Gifts Data Desk","",None)
+        draft_id=self.db.save_draft("gifts","data_desk",text,score,"Gifts Data Desk","",None)
+        FactStore(self.db).save(draft_id,FactPack.create(facts,"Gifts Market Desk"))
+        return draft_id
 
     async def create_match_data_post(self,facts):
         prompt=("Создай оригинальный пост о КОНКРЕТНОМ матче только по данным ниже. Названия обеих команд должны быть в первых двух строках. "
@@ -113,7 +116,9 @@ class Editor:
         if score<3:
             text=clean_generated_post(await self.llm(CHANNELS["liga"]["voice"]+POST_RULES,f"Усиль первую строку, не меняя факты.\n{text}",.88)); score,_=score_hook(plain_text(text))
         text=decorate_post(text,"liga")
-        return self.db.save_draft("liga","match_radar",text,score,"Match Radar","",None)
+        draft_id=self.db.save_draft("liga","match_radar",text,score,"Match Radar","",None)
+        FactStore(self.db).save(draft_id,FactPack.create(facts,"Match Radar"))
+        return draft_id
 
     async def create_from_courses(self,channel_key):
         snippets=select_course_snippets(self.db.course_snippets(200),channel_key,7)

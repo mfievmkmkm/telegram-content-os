@@ -5,6 +5,7 @@ import asyncio
 from . import __main__ as legacy
 from .football_challenge_runtime import install as install_football_challenges
 from .operator_runtime import install as install_operator
+from .miniapp_runtime import install as install_miniapp
 from .persistence_v2 import install as install_persistence
 from .publishing_v2 import install_publishing
 from .remix_runtime import install_remix
@@ -22,10 +23,16 @@ football_challenge_router = install_football_challenges(legacy)
 remix, remix_router = install_remix(legacy)
 director, editorial_memory, review_router = install_review(legacy)
 publishing = install_publishing(legacy, editorial_memory)
+miniapp = install_miniapp(legacy)
 
 
 async def main():
-    await legacy.main()
+    if legacy.settings.miniapp_port:
+        await miniapp.start(legacy.settings.miniapp_port)
+    try:
+        await legacy.main()
+    finally:
+        await miniapp.stop()
 
 
 if __name__ == "__main__":

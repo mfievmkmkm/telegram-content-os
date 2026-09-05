@@ -47,7 +47,7 @@ class RemixService:
             "meme — setup + punchline, максимум 180 знаков;\n"
             "poll_question — спорный, но честный вопрос;\n"
             "poll_options — массив 2–4 коротких вариантов;\n"
-            "shorts_script — 55–95 слов, hook/body/payoff/CTA без служебных заголовков;\n"
+            "shorts_script — 42–70 слов, hook/body/payoff/CTA без служебных заголовков;\n"
             "sales_bridge — нативный переход к следующему действию без ложного дефицита.\n\n"
             f"ИСХОДНАЯ ИДЕЯ:\n{source_text[:7000]}"
         )

@@ -92,6 +92,10 @@ class Database:
     def draft(self, draft_id):
         with self.connect() as db: return db.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
 
+    def recent_drafts(self, channel_key, limit=20):
+        with self.connect() as db:
+            return db.execute("SELECT * FROM drafts WHERE channel_key=? AND status!='deleted' ORDER BY id DESC LIMIT ?",(channel_key,limit)).fetchall()
+
     def update(self, draft_id, **fields):
         allowed = {"text","hook_score","status","scheduled_at","published_at","published_message_id"}; clean = {k:v for k,v in fields.items() if k in allowed}
         if clean:
@@ -139,6 +143,10 @@ class Database:
         with self.connect() as db:
             db.execute("INSERT INTO post_metrics(draft_id,views,reactions,forwards,engagement,captured_at) VALUES(?,?,?,?,?,?)",
                        (draft_id,views,reactions,forwards,engagement,datetime.now(self.timezone).isoformat()))
+
+    def metrics_for_draft(self,draft_id,limit=100):
+        with self.connect() as db:
+            return db.execute("SELECT * FROM post_metrics WHERE draft_id=? ORDER BY captured_at LIMIT ?",(draft_id,limit)).fetchall()
 
     def analytics_summary(self, limit=10):
         with self.connect() as db:

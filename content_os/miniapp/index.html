@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080b12"><title>Content OS</title><link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header><div><span class="eyebrow">CONTROL ROOM</span><h1>Content OS</h1></div><button id="refresh" aria-label="Обновить">↻</button></header>
+  <main>
+    <section class="pulse"><div><span>Сегодня</span><strong id="today">—</strong></div><p id="status">Соединяюсь с системой…</p></section>
+    <section class="metrics" id="metrics"></section>
+    <nav id="tabs" aria-label="Разделы">
+      <button class="active" data-tab="drafts">Поток</button><button data-tab="calendar">План</button>
+      <button data-tab="analytics">Рост</button><button data-tab="market">Market</button><button data-tab="football">Football</button>
+      <button data-tab="shop">Shop</button><button data-tab="studio">Studio</button><button data-tab="knowledge">Knowledge</button><button data-tab="projects">Проекты</button>
+    </nav>
+    <section id="content" aria-live="polite"></section>
+  </main>
+  <template id="empty"><div class="empty"><b>Здесь чисто</b><span>Новые данные появятся автоматически</span></div></template>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script><script src="/app.js"></script>
+</body></html>

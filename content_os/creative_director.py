@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 
 from .formatting import plain_text
+from .fact_layer import numeric_claims
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,7 @@ class DirectorReport:
         self.score = max(0, self.score - issue.penalty)
 
 
-def inspect_content(text: str, *, channel: str, similarity_score: float = 0.0) -> DirectorReport:
+def inspect_content(text: str, *, channel: str, similarity_score: float = 0.0, fact_numbers: tuple[str, ...] | None = None) -> DirectorReport:
     report = DirectorReport()
     clean = plain_text(text or "").strip()
     words = clean.split()
@@ -53,9 +54,13 @@ def inspect_content(text: str, *, channel: str, similarity_score: float = 0.0) -
     elif similarity_score >= .70:
         report.add(DirectorIssue("similar", "Слишком знакомая тема/подача — нужен другой угол", "block", 24))
 
-    numeric_claims = re.findall(r"(?<!\w)(?:\d+[.,]?\d*\s?(?:%|TON|₽|\$|€)|\+\d+%)(?!\w)", clean, re.I)
-    if channel == "gifts" and numeric_claims:
-        report.add(DirectorIssue("facts_required", "В Gifts есть цифры: перед публикацией нужен подтверждённый fact pack", "warning", 0))
+    claims = numeric_claims(clean)
+    if channel == "gifts" and claims and fact_numbers is None:
+        report.add(DirectorIssue("facts_required", "В Gifts есть цифры без подтверждённого fact pack", "block", 28))
+    elif channel == "gifts" and claims:
+        allowed=set(fact_numbers or ()); unsupported=[value for value in claims if value not in allowed]
+        if unsupported:
+            report.add(DirectorIssue("unsupported_fact", "В тексте появились цифры, которых нет во входных данных: "+", ".join(unsupported), "block", 32))
 
     stale_phrases = (
         "рынок демонстрирует активность",

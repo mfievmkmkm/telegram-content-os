@@ -22,10 +22,36 @@ AI-редакция для `@LigaProgress` и `@GiftsIntelligence`: ищет т�
 - голос, кадры и субтитры становятся независимыми стадиями, чтобы не пересобирать ролик целиком;
 - Content Fingerprint + Creative Director блокируют повторяющиеся и слабые материалы;
 - Visual Director выбирает визуальную механику с anti-repeat вместо случайного шаблона;
-- Mini App, Autopilot и новый MatchLens идут после стабилизации production-loop, аналитики и продаж;
+- Autopilot работает только как утверждаемый план дня; Mini App и новый MatchLens идут после стабилизации production-loop, аналитики и продаж;
 - секреты остаются только в Railway environment variables.
 
 Новые домены 2.0 постепенно заменяют монолитную логику, но legacy-path остаётся fallback до завершения миграции.
+
+В v2 главный экран — это operator cockpit, а не список технических функций. `TODAY`
+ранжирует реальные radar-темы и Content DNA, собирает до трёх разных форматов на проект и
+показывает причину выбора. Один пункт или весь план можно передать в Content Factory; публикация
+всё равно остаётся ручной. `PROJECTS` разделяет Gifts Intelligence, LigaProgress и AI Content Lab,
+а Growth, Sales и Knowledge используют общую память без смешивания интерфейсов.
+
+В v2 доступен защищённый Telegram Mini App: Dashboard, поток решений, календарь,
+Growth, Gifts Market Desk, Football Passport, Shop, Shorts Studio, Knowledge и Projects.
+Он использует ту же базу и проверяет подпись Telegram WebApp; браузерный username без
+валидной подписи не даёт доступа. На Railway порт берётся из системной переменной `PORT`
+автоматически; достаточно задать публичный HTTPS-адрес `MINIAPP_PUBLIC_URL`.
+
+Creative Director объединён с Content Doctor: до создания он отсекает слабые темы, после —
+показывает HOOK / CLARITY / EMOTION / TRUST / CTA / OFFER, проверяет fingerprint и визуальные
+повторы. Для Gifts числовые утверждения теперь являются блокирующими без сохранённого fact pack;
+цифра, которой не было во входных данных Market Desk, также блокирует материал.
+
+Visual Director предлагает восемь самостоятельных композиций: cinematic, photo split,
+number poster, market dashboard, chat meme, dossier, magazine editorial и object spotlight.
+Память открывает сначала наименее использованную группу, поэтому лента не застревает на A/B/C.
+
+Content Remix создаёт большой и короткий пост, мем, опрос, Shorts и продажный мост как разные
+углы одной идеи. Каждый результат можно отдельно сохранить новым черновиком и снова пропустить
+через Director. Growth сравнивает снимки одинакового возраста 1/6/24/48 часов и предлагает
+однофакторный тест только после достаточного числа наблюдений.
 
 ## Первый запуск
 

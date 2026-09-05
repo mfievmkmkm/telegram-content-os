@@ -37,3 +37,23 @@ def test_subtitles_have_outline_without_opaque_rectangles():
     ass=ass_subtitles("Проверяй факты до покупки",4)
     assert ",1,4,2,2," in ass
     assert ",3,3,1,2," not in ass
+
+
+def test_stage_cache_keys_invalidate_only_edited_stage():
+    from shorts_service.core import stage_cache_keys
+
+    base = {
+        "video_script": "Это достаточно длинный сценарий для честной проверки независимых этапов ролика.",
+        "voice_provider": "speechkit", "voice_name": "lera", "voice_rate": 1.04,
+        "subtitle_preset": "punch", "channel": "liga",
+        "scenes": [{"visual": "football training", "asset_type": "stock_video"}],
+    }
+    original = stage_cache_keys(base, 12.5)
+    subtitles = stage_cache_keys({**base, "subtitle_preset": "clean"}, 12.5)
+    scenes = stage_cache_keys({**base, "scenes": [{"visual": "tactics board", "asset_type": "text_scene"}]}, 12.5)
+    voice = stage_cache_keys({**base, "voice_rate": 1.1}, 12.5)
+    assert original["voice"] == subtitles["voice"] == scenes["voice"]
+    assert original["scenes"] == subtitles["scenes"] == voice["scenes"]
+    assert original["captions"] != subtitles["captions"]
+    assert original["scenes"] != scenes["scenes"]
+    assert original["voice"] != voice["voice"]

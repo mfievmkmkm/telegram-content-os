@@ -11,6 +11,8 @@ worker secrets into the editor service.
 - `MPT_API_KEY`: exactly the same value as Shorts Worker's `SHORTS_API_KEY`
 - `MATCHLENS_BASE_URL`: public HTTPS domain of MatchLens
 - `MATCHLENS_API_KEY`: exactly the same value as MatchLens Worker's key
+- Railway `PORT` starts Mini App automatically; use `MINIAPP_PORT` only for non-Railway hosting
+- `MINIAPP_PUBLIC_URL`: public HTTPS editor domain used by Telegram's menu button
 - Keep `AUTO_PUBLISH=false` until manual publishing, scheduling and both channels pass acceptance.
 - Keep `CONTENT_OS_RUNTIME=legacy` until the v2 smoke test is ready. Switch only the editor service to `CONTENT_OS_RUNTIME=v2` for acceptance.
 - Do not add `YANDEX_SPEECHKIT_*` to this service. They belong to Shorts Worker only.
@@ -53,7 +55,8 @@ The v2 persistence bridge can temporarily degrade new funnel event names to lega
 4. In Content OS → System verify editor env readiness. Do not expose secret values; only missing variable names matter.
 5. Set only editor `CONTENT_OS_RUNTIME=v2`. Keep `AUTO_PUBLISH=false`.
 6. Open TODAY and PROJECTS. Generate one Football Challenge draft and send it through Director review.
-7. Generate one normal Gifts draft and one Liga draft. Check anti-repeat and Creative Director.
+7. Open the Telegram menu Mini App, verify the signed admin session, approve a disposable draft there, and confirm that non-admin access is rejected.
+8. Generate one normal Gifts draft and one Liga draft. Check anti-repeat and Creative Director.
 8. Request A/B/C visual variants and select a different card.
 9. Run Content Remix from one approved material.
 10. Build one Shorts MP4. Inspect hook, cuts, Russian voice, subtitles, mobile safe-zone and whether scene choices actually support the voiceover.
@@ -70,5 +73,5 @@ The v2 persistence bridge can temporarily degrade new funnel event names to lega
 - Real Railway/SpeechKit MP4 smoke test.
 - Real Telegram publish/schedule/cancel cycle.
 - Real Supabase Growth/Sales attribution after migration.
-- Mixed-media Shorts assets beyond stock video are still a separate acceptance item; do not label them production-ready until the renderer actually consumes those asset types.
-- Uploaded MP3/custom-audio UX is not complete end-to-end yet.
+- Mixed-media Shorts must be visually accepted with at least one real image/card scene and one stock scene; unsupported assets deliberately fall back to branded text scenes.
+- Uploaded MP3/custom audio is implemented end-to-end, but still requires one real Telegram → worker → MP4 acceptance pass before production sign-off.

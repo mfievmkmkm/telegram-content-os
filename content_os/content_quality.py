@@ -71,10 +71,11 @@ def review_candidate(
     format_key: str,
     history: list[tuple[ContentFingerprint, str]] | None = None,
     visual_type: str = "",
+    fact_numbers: tuple[str, ...] | None = None,
 ) -> QualityDecision:
     fp = build_fingerprint(text=text, topic=topic, angle=angle, format_key=format_key, visual_type=visual_type)
     repeat = repetition_gate(fp, text, history or [])
-    report = inspect_content(text, channel=channel, similarity_score=repeat.score if not repeat.allowed else 0.0)
+    report = inspect_content(text, channel=channel, similarity_score=repeat.score if not repeat.allowed else 0.0, fact_numbers=fact_numbers)
     return QualityDecision(
         approved=report.approved and repeat.allowed,
         fingerprint=fp,

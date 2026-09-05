@@ -14,9 +14,11 @@ DISPLAY_FONT="/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf"
 REGULAR="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 SCENE_DIR=Path(__file__).with_name("assets")/"card_scenes"
 SCENES=("market_phone.webp","alert_vault.webp","liquid_gift.webp","rare_object.webp","fomo_meme.webp","gift_auction.webp","market_whale.webp","fomo_cart.webp",
-        "vault_capsule.webp","crystal_market.webp","auction_strike.webp","gift_terminal.webp","chrome_whale.webp","rare_safe.webp","market_cart.webp")
+        "vault_capsule.webp","crystal_market.webp","auction_strike.webp","gift_terminal.webp","chrome_whale.webp","rare_safe.webp","market_cart.webp",
+        "3d_gift_vault.webp","3d_market_whale.webp","3d_gift_auction.webp","3d_fomo_cart.webp")
 LIGA_SCENES=("stadium_tunnel.webp","tactics_lab.webp","night_training.webp","goalkeeper.webp","golden_bench.webp",
-             "sprint_rain.webp","coach_hologram.webp","keeper_flight.webp","empty_bench.webp","duel_fire.webp","tunnel_light.webp","neon_strike.webp")
+             "sprint_rain.webp","coach_hologram.webp","keeper_flight.webp","empty_bench.webp","duel_fire.webp","tunnel_light.webp","neon_strike.webp",
+             "3d_boot_impact.webp","3d_keeper_catch.webp")
 
 def font(size,bold=True): return ImageFont.truetype(FONT if bold else REGULAR,size)
 
@@ -43,11 +45,11 @@ def _wrap_pixels(draw,text,current_font,max_width):
 
 def _pick_liga_scene(text,seed):
     value=text.lower()
-    if any(x in value for x in ("вратар", "голкипер", "сейв", "ворот")): return ("goalkeeper.webp","keeper_flight.webp")[seed%2]
+    if any(x in value for x in ("вратар", "голкипер", "сейв", "ворот")): return ("goalkeeper.webp","keeper_flight.webp","3d_keeper_catch.webp")[seed%3]
     if any(x in value for x in ("скамей", "состав", "замен", "запас")): return ("golden_bench.webp","empty_bench.webp")[seed%2]
     if any(x in value for x in ("трениров", "упражнен", "скорост", "рывок", "конус")): return ("night_training.webp","sprint_rain.webp")[seed%2]
     if any(x in value for x in ("тактик", "схем", "позици", "разбор", "эпизод", "зон")): return ("tactics_lab.webp","coach_hologram.webp")[seed%2]
-    if any(x in value for x in ("удар", "гол", "заверш", "бьёт")): return "neon_strike.webp"
+    if any(x in value for x in ("удар", "гол", "заверш", "бьёт", "бутс", "техник")): return ("neon_strike.webp","3d_boot_impact.webp")[seed%2]
     if any(x in value for x in ("единобор", "отбор", "контакт", "дуэл")): return "duel_fire.webp"
     if any(x in value for x in ("мем", "пов", "когда", "тренер сказал", "лицо")): return ("empty_bench.webp","golden_bench.webp")[seed%2]
     if any(x in value for x in ("дебют", "страх", "давлен", "путь", "характер")): return "tunnel_light.webp"
@@ -55,12 +57,12 @@ def _pick_liga_scene(text,seed):
 
 def _pick_gift_scene(text,seed):
     value=text.lower()
-    if any(x in value for x in ("фишинг", "скам", "мошенн", "поддель", "безопас")): return ("alert_vault.webp","rare_safe.webp")[seed%2]
+    if any(x in value for x in ("фишинг", "скам", "мошенн", "поддель", "безопас")): return ("alert_vault.webp","rare_safe.webp","3d_gift_vault.webp")[seed%3]
     if any(x in value for x in ("коллекционер", "эстетик", "истори", "культур")): return ("rare_object.webp","vault_capsule.webp")[seed%2]
-    if any(x in value for x in ("кит", "холдер", "разгруз", "вышел")): return ("market_whale.webp","chrome_whale.webp")[seed%2]
-    if any(x in value for x in ("аукцион", "торг", "ставк", "покупател")): return ("gift_auction.webp","auction_strike.webp")[seed%2]
-    if any(x in value for x in ("fomo", "пик", "корзин", "скуп", "набрал")): return ("fomo_cart.webp","market_cart.webp")[seed%2]
-    if any(x in value for x in ("редк", "уник", "коллекц", "эксклюзив")): return ("rare_object.webp","rare_safe.webp","vault_capsule.webp")[seed%3]
+    if any(x in value for x in ("кит", "холдер", "разгруз", "вышел")): return ("market_whale.webp","chrome_whale.webp","3d_market_whale.webp")[seed%3]
+    if any(x in value for x in ("аукцион", "торг", "ставк", "покупател")): return ("gift_auction.webp","auction_strike.webp","3d_gift_auction.webp")[seed%3]
+    if any(x in value for x in ("fomo", "пик", "корзин", "скуп", "набрал")): return ("fomo_cart.webp","market_cart.webp","3d_fomo_cart.webp")[seed%3]
+    if any(x in value for x in ("редк", "уник", "коллекц", "эксклюзив")): return ("rare_object.webp","rare_safe.webp","vault_capsule.webp","3d_gift_vault.webp")[seed%4]
     if any(x in value for x in ("график", "рынок", "цена", "floor", "тон")): return ("market_phone.webp","gift_terminal.webp","crystal_market.webp")[seed%3]
     return SCENES[(seed//2)%len(SCENES)]
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 import re
 import unicodedata
 
@@ -91,3 +94,22 @@ def unique_terms(payload:dict)->list[str]:
         term=re.sub(r"[^a-zA-Z0-9 -]","",str(value)).strip()[:70]
         if term and term.lower() not in {x.lower() for x in result}: result.append(term)
     return result[:7]
+def _stable_hash(value) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def stage_cache_keys(payload: dict, duration: float | None = None) -> dict[str, str]:
+    """Hash independently editable stages so a small edit invalidates only its stage."""
+    script = clean_script(payload.get("video_script") or payload.get("voiceover") or payload.get("video_subject") or "")
+    voice = _stable_hash({
+        "script": script, "provider": payload.get("voice_provider"), "name": payload.get("voice_name"),
+        "rate": payload.get("voice_rate"), "asset": payload.get("voice_asset_ref"),
+    })
+    scenes = _stable_hash({
+        "scenes": payload.get("scenes") or [], "terms": payload.get("video_terms") or [],
+        "channel": payload.get("brand_channel") or payload.get("channel"),
+        "duration": round(float(duration), 3) if duration is not None else None,
+    })
+    captions = _stable_hash({"script": script, "preset": payload.get("subtitle_preset"), "voice": voice})
+    return {"voice": voice, "scenes": scenes, "captions": captions}
