@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -71,6 +72,12 @@ class CourseFileState(StatesGroup):
     waiting_file = State()
 
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
+
+async def safe_edit_text(message,*args,**kwargs):
+    try: return await message.edit_text(*args,**kwargs)
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower(): return message
+        raise
 
 def track(user_id,event_type,source="",offer_key=""):
     try: db.save_funnel_event(user_id,event_type,source,offer_key)
@@ -348,7 +355,7 @@ async def order_status(c:CallbackQuery):
 @router.callback_query(F.data=="panel:football")
 async def panel_football(c:CallbackQuery):
     if not admin(c): return
-    await c.message.edit_text("⚽ <b>Футбольная лаборатория</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    await safe_edit_text(c.message,"⚽ <b>Футбольная лаборатория</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="📡 Матчи сегодня",callback_data="panel:games"),InlineKeyboardButton(text="🎥 Разобрать видео",callback_data="panel:match")],
       [InlineKeyboardButton(text="🔎 Статус разбора",callback_data="panel:matchhelp"),InlineKeyboardButton(text="🎯 Выбрать игрока",callback_data="panel:targethelp")],
       [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players")],
@@ -538,7 +545,7 @@ async def show_match_status(target,local_id,edit=False):
     text=f"⚽ <b>Разбор #{row['id']}</b>\nСтатус: {html.escape(row['status'])}\nГотовность: {row['progress']}%{hint}{error}"
     profiles=db.players() if row["status"]=="completed" else ()
     markup=match_job_keyboard(row["id"],tracker_ids if row["status"]=="awaiting_selection" else (),row["result_url"] or "",profiles)
-    if edit: await target.edit_text(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
+    if edit: await safe_edit_text(target,text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
     else: await target.answer(text,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=markup)
     return row
 
@@ -869,10 +876,10 @@ async def create_shorts(c:CallbackQuery):
         async def progress(value):
             try: await status.edit_text(f"🎬 <b>Собираю Shorts: {value}%</b>\nПодбираю кадры, озвучку и субтитры…",parse_mode=ParseMode.HTML)
             except Exception: pass
-        _,video,voice_provider=await videos.render(data,progress)
+        _,video,voice_provider,voice_error=await videos.render(data,progress)
         await status.delete()
-        voice_note="" if voice_provider=="elevenlabs" else "\n\n⚠️ Голос: резервный Edge — проверь ELEVENLABS_API_KEY и ELEVENLABS_VOICE_ID"
-        await bot.send_video(c.message.chat.id,BufferedInputFile(video,filename=f"shorts-{job_id}.mp4"),caption=f"🎬 {data['title']}\n\n{data['caption']}{voice_note}",supports_streaming=True)
+        voice_note="" if voice_provider=="elevenlabs" else f"\n\n⚠️ Резервный Edge: {voice_error or 'ElevenLabs не настроен'}"
+        await bot.send_video(c.message.chat.id,BufferedInputFile(video,filename=f"shorts-{job_id}.mp4"),caption=f"🎬 {data['caption']}{voice_note}"[:1024],supports_streaming=True)
     except Exception as exc:
         log.exception("Shorts generation failed"); await c.message.answer(f"❌ Shorts не собрался: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
 
