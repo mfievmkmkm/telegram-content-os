@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, Message
 
+from .campaigns import parse_campaign
 from .sales import DiagnosticInput, recommend
 from .shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefront
 
@@ -46,12 +47,13 @@ def create_shop_runtime(settings,db,editor,admin_bot):
             [InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
         ])
 
-    def recommendation_markup(rec):
+    def recommendation_markup(rec,source=""):
         pkg=rec.package
         if pkg.key=="gifts_intelligence":
             username=settings.gifts_subscription_bot_username or "vsdvscbot"
+            payload=source if parse_campaign(source) else "shop"
             return InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start=shop")],
+                [InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start={payload}")],
                 [InlineKeyboardButton(text="↩️ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
             ])
         legacy_key=next((key for key in pkg.legacy_offer_keys if key in OFFERS),None)
@@ -75,14 +77,21 @@ def create_shop_runtime(settings,db,editor,admin_bot):
               f"<b>Стоимость:</b> {html.escape(pkg.price_label)}\n"
               f"<b>Срок:</b> {html.escape(pkg.turnaround)}\n\n"
               f"<i>{html.escape(rec.reason)} · уверенность {rec.confidence}%</i>{missing}")
-        await message.answer(text,parse_mode=ParseMode.HTML,reply_markup=recommendation_markup(rec))
+        await message.answer(text,parse_mode=ParseMode.HTML,reply_markup=recommendation_markup(rec,source))
 
     @router.message(CommandStart())
     @router.message(Command("shop"))
     async def home(message:Message,state:FSMContext):
         await state.clear(); payload=(message.text or "").partition(" ")[2].strip()
+        campaign=parse_campaign(payload)
         source="liga_post" if payload=="service_liga" else "gifts_post" if payload=="service_gifts" else payload or "direct"
         await state.update_data(shop_source=source); track(message.from_user.id,"landing",source)
+        if campaign and campaign.project=="gifts":
+            rec=recommend(DiagnosticInput(goal="Gifts Intelligence",vertical="gifts"))
+            return await show_recommendation(message,rec,source)
+        if campaign and campaign.project=="liga":
+            rec=recommend(DiagnosticInput(goal="Хочу улучшить свою игру",vertical="football"))
+            return await show_recommendation(message,rec,source)
         if payload=="service_gifts":
             rec=recommend(DiagnosticInput(goal="Gifts Intelligence",vertical="gifts"))
             return await show_recommendation(message,rec,source)
@@ -93,7 +102,9 @@ def create_shop_runtime(settings,db,editor,admin_bot):
 
     @router.callback_query(F.data=="shop:home")
     async def back(c:CallbackQuery,state:FSMContext):
-        await state.clear(); await c.message.edit_text(HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard()); await c.answer()
+        current=await state.get_data(); source=current.get("shop_source","direct")
+        await state.clear(); await state.update_data(shop_source=source)
+        await c.message.edit_text(HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard()); await c.answer()
 
     @router.callback_query(F.data.startswith("shop:category:"))
     async def category(c:CallbackQuery,state:FSMContext):
@@ -102,7 +113,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         key=c.data.rsplit(":",1)[-1]
         if key not in {"liga","services"}: return await c.answer("Раздел не найден",show_alert=True)
         if key=="liga":
-            text="<b>FOOTBALL LAB</b>\n\n>От конкретного эпизода к плану развития. Выбери формат, если уже точно знаешь, что тебе нужно"
+            text="<b>FOOTBALL LAB</b>\n\nОт конкретного эпизода к плану развития. Выбери формат, если уже точно знаешь, что тебе нужно"
         else:
             text="<b>AI CONTENT LAB</b>\n\nКонтент и автоматизация как готовый результат. Каталог — для тех, кто уже определился"
         await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=category_keyboard(key)); await c.answer()
@@ -150,7 +161,8 @@ def create_shop_runtime(settings,db,editor,admin_bot):
 
     @router.callback_query(F.data=="shop:diagnostic")
     async def diagnostic(c:CallbackQuery,state:FSMContext):
-        await state.clear()
+        data=await state.get_data(); source=data.get("shop_source","direct")
+        await state.clear(); await state.update_data(shop_source=source)
         await c.message.edit_text("<b>Что должно измениться?</b>\n\nСначала результат. Инструмент подберём потом",parse_mode=ParseMode.HTML,reply_markup=diagnostic_keyboard()); await c.answer()
 
     @router.callback_query(F.data.startswith("sales:goal:"))
@@ -178,7 +190,8 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         if len(brief)<12: return await message.answer("Нужно чуть конкретнее: что должно измениться после нашей работы?")
         data=await state.get_data(); source=data.get("shop_source","direct")
         rec=recommend(DiagnosticInput(goal=brief,notes=brief))
-        await state.clear(); await show_recommendation(message,rec,source)
+        await state.clear(); await state.update_data(shop_source=source)
+        await show_recommendation(message,rec,source)
 
     async def setup_commands():
         await shop_bot.set_my_commands([
