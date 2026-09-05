@@ -35,7 +35,8 @@ class ShortRenderClient:
                         return False, f"HTTP {response.status}"
             providers = data.get("tts") or {}
             voice = ", ".join(key for key, ok in providers.items() if ok) or data.get("voice", "—")
-            return True, f"Pexels {'да' if data.get('pexels') else 'НЕТ'} · TTS {voice}"
+            assets = ",".join(data.get("asset_types") or []) or "stock_video"
+            return True, f"Pexels {'да' if data.get('pexels') else 'НЕТ'} · TTS {voice} · assets {assets}"
         except Exception as exc:
             return False, f"{type(exc).__name__}: {str(exc)[:120]}"
 
@@ -68,11 +69,16 @@ class ShortRenderClient:
                         content = await response.read()
                     if len(content) > 49 * 1024 * 1024:
                         raise RuntimeError("готовое видео больше лимита Telegram 49 МБ")
+                    warnings = [
+                        str(status.get("voice_error") or "").strip(),
+                        str(status.get("render_warning") or "").strip(),
+                    ]
+                    warning = " · ".join(item for item in warnings if item)[:420]
                     return (
                         task_id,
                         content,
                         str(status.get("voice_provider") or "unknown"),
-                        str(status.get("voice_error") or "")[:240],
+                        warning,
                     )
             raise RuntimeError(f"рендер не завершился за {self.settings.mpt_timeout_minutes} минут")
 
