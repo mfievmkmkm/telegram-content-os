@@ -84,19 +84,21 @@ def build_growth_summary(
     metric_rows: Iterable[Mapping],
     tolerance_ratio: float = 0.35,
 ) -> GrowthSummary:
-    """Pick the closest trustworthy snapshot for 1h/6h/24h/48h.
+    """Pick the first trustworthy measurement after each 1h/6h/24h/48h mark.
 
-    A measurement is used only when it is reasonably close to the target window.
-    This avoids pretending that a 19-hour measurement is a real 24-hour result.
+    A window never borrows an earlier measurement. That keeps a 19-hour snapshot
+    from being labelled as a 24-hour result while still allowing a modestly late
+    collector run (for example 24h20m) to fill the 24-hour window.
     """
     published = _dt(published_at)
-    snapshots = [_snapshot(row, published) for row in metric_rows]
+    snapshots = sorted((_snapshot(row, published) for row in metric_rows), key=lambda item: item.age_hours)
     selected: dict[int, GrowthSnapshot] = {}
     for target in WINDOWS_HOURS:
-        if not snapshots:
+        eligible = [item for item in snapshots if item.age_hours >= target]
+        if not eligible:
             continue
-        closest = min(snapshots, key=lambda item: abs(item.age_hours - target))
+        closest = eligible[0]
         tolerance = max(0.5, target * tolerance_ratio)
-        if abs(closest.age_hours - target) <= tolerance:
+        if closest.age_hours - target <= tolerance:
             selected[target] = closest
     return GrowthSummary(content_id=content_id, windows=selected)
