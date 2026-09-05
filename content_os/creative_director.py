@@ -65,7 +65,9 @@ def inspect_content(text: str, *, channel: str, similarity_score: float = 0.0) -
         "не финансовая рекомендация",
     )
     if any(phrase in clean.lower() for phrase in stale_phrases):
-        report.add(DirectorIssue("sterile_phrase", "Нашёл стерильную/шаблонную формулировку", penalty=12))
+        # This is a brand-level rule, not a cosmetic warning. Content OS should
+        # never show the admin the exact sterile phrases it was built to eliminate.
+        report.add(DirectorIssue("sterile_phrase", "Нашёл стерильную/шаблонную формулировку", "block", 18))
 
     return report
 
