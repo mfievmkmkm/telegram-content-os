@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .core import alignment_chunks, caption_chunks
+try:
+    from .core import alignment_chunks, caption_chunks
+except ImportError:
+    from core import alignment_chunks, caption_chunks
 
 
 @dataclass(frozen=True, slots=True)
