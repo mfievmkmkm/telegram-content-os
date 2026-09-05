@@ -1,4 +1,5 @@
 from collections import Counter
+import re
 from datetime import datetime
 
 from supabase import create_client
@@ -26,6 +27,8 @@ class SupabaseDatabase:
         return {row["source_hash"] for row in rows}
 
     def save_draft(self,channel_key,format_key,text,hook_score,title="",url="",source_hash=None):
+        if not re.search(r"[A-Za-zА-Яа-яЁё0-9]",re.sub(r"<[^>]+>","",str(text or ""))):
+            raise ValueError("Пустой пост отклонён редактором")
         payload={"channel_key":channel_key,"format_key":format_key,"text":text,"hook_score":hook_score,
                  "source_title":title,"source_url":url,"source_hash":source_hash,"created_at":datetime.now(self.timezone).isoformat()}
         rows=self.client.table("content_os_drafts").insert(payload).execute().data

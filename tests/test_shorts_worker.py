@@ -31,3 +31,9 @@ def test_alignment_chunks_follow_real_voice_timing():
     assert chunks[1][0]=="сейчас"
     assert chunks[0][1]==0
     assert chunks[-1][2]>.8
+
+
+def test_subtitles_have_outline_without_opaque_rectangles():
+    ass=ass_subtitles("Проверяй факты до покупки",4)
+    assert ",1,4,2,2," in ass
+    assert ",3,3,1,2," not in ass

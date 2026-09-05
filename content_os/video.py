@@ -18,6 +18,8 @@ SHORTS_RULES = """Создай производственное задание �
 «в этот момент всё меняется». Нужны конкретная ситуация, узнаваемая деталь и практический вывод.
 Для футбола не проси кадры защищённых трансляций: тренировка, поле, раздевалка, схемы, силуэты.
 Для Gifts используй интерфейсные макеты, подарки, графики, TON и тёмный неон; не выдумывай цены.
+Для Gifts запрещены обычные подарочные коробки, ювелирные украшения и случайные счастливые люди.
+Каждый visual для Gifts должен означать digital collectible, NFT-интерфейс, смартфон, TON или рыночные данные.
 Верни СТРОГО JSON без markdown:
 {"title":"...","hook":"...","voiceover":"...","scenes":[{"seconds":4,"visual":"English stock footage query or exact edit instruction","screen_text":"..."}],"caption":"...","music_mood":"...","cta":"..."}
 """
@@ -109,12 +111,14 @@ class VideoFactory:
     def mpt_payload(self,data):
         broad={
           "liga":["football training","soccer field","athlete running","football boots","sports coaching"],
-          "gifts":["smartphone technology","digital art","financial chart","neon abstract","online marketplace"],
+          "gifts":["NFT marketplace on smartphone","digital collectible 3D neon","crypto market chart dark","TON blockchain abstract","mobile trading interface"],
         }
         suggested=[str(scene.get("visual","")).strip() for scene in data["scenes"] if scene.get("visual")]
         terms=[]
         # Specific scene prompts first; broad stock queries are only a fallback.
         for term in suggested+broad.get(data.get("channel"),broad["liga"]):
+            if data.get("channel")=="gifts" and re.search(r"\b(gift|present|box|jewelry|diamond)\b",term,re.I):
+                term="NFT digital collectible on smartphone dark neon"
             if term and term.lower() not in {item.lower() for item in terms}: terms.append(term)
         return {
             "video_subject":data["title"], "video_script":self.voice_script(data["voiceover"]),
@@ -170,6 +174,10 @@ class VideoFactory:
         missing=required-set(data)
         if missing: raise ValueError(f"Shorts JSON: нет полей {', '.join(sorted(missing))}")
         if not isinstance(data["scenes"],list) or not 5<=len(data["scenes"])<=10: raise ValueError("Shorts должен содержать 5–10 сцен")
+        voice=plain_text(str(data.get("voiceover") or "")).strip(); words=voice.split()
+        tail=words[-1].strip(".,!?—–:;") if words else ""
+        if not 42<=len(words)<=70: raise ValueError(f"Озвучка должна содержать 42–70 слов, сейчас {len(words)}")
+        if len(tail)==1 and tail.isalpha(): raise ValueError("Озвучка оборвана на последнем слове")
         duration=sum(int(scene.get("seconds",0)) for scene in data["scenes"])
         if not 22<=duration<=34: raise ValueError(f"Некорректная длительность: {duration} сек")
 
@@ -179,9 +187,16 @@ class VideoFactory:
         text=plain_text(draft.get("text","")).strip()
         lines=[line.strip() for line in text.splitlines() if line.strip()]
         hook=(lines[0] if lines else "Остановись: здесь есть деталь, которую все пропускают")[:120]
-        words=text.split(); voiceover=" ".join(words[:62])
+        sentences=re.split(r"(?<=[.!?])\s+",text); selected=[]
+        for sentence in sentences:
+            if len((" ".join(selected+[sentence])).split())>62: break
+            selected.append(sentence)
+        voiceover=" ".join(selected).strip()
+        if len(voiceover.split())>62: voiceover=" ".join(voiceover.split()[:62]).rstrip(" ,;:")+"."
         if len(voiceover.split())<35:
             voiceover=(voiceover+" Главное — не верить первому впечатлению. Посмотри на причину, проверь факты и только потом делай вывод.").strip()
+        if len(voiceover.split())<42:
+            voiceover=(voiceover+" Один быстрый чек сейчас дешевле, чем попытка оправдать ошибку потом. Проверь ещё раз.").strip()
         if draft.get("channel_key")=="gifts":
             visuals=["telegram gift dark neon","digital collectible close up","crypto market chart dark","phone marketplace scrolling","ton coin animation","collector decision concept","dark neon question mark"]
             mood="dark electronic tension"

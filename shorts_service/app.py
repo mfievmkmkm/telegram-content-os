@@ -115,7 +115,7 @@ async def synthesize(script:str,path:Path,voice:str,rate:str)->tuple[str,dict|No
         url=f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VOICE}/with-timestamps"
         headers={"xi-api-key":ELEVEN_KEY,"Content-Type":"application/json","Accept":"audio/mpeg"}
         body={"text":script,"model_id":ELEVEN_MODEL,"voice_settings":{
-            "stability":0.38,"similarity_boost":0.78,"style":0.42,"use_speaker_boost":True,"speed":1.08}}
+            "stability":0.28,"similarity_boost":0.76,"style":0.62,"use_speaker_boost":True,"speed":1.12}}
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
                 async with session.post(url,params={"output_format":"mp3_44100_128"},json=body,headers=headers) as response:
@@ -134,11 +134,15 @@ async def render(task_id:str,payload:dict):
     job=read_job(task_id); folder=TASKS/task_id
     try:
         script=clean_script(payload.get("video_script") or payload.get("video_subject") or "")
-        # Long written posts sound synthetic when read aloud. Keep only the sharpest 62 words.
-        script=" ".join(script.split()[:62])
-        # Long full stops produce robotic one-second gaps in both TTS engines.
-        script=script.replace("?",",").replace("!",",").replace(".",",")
-        script=" ".join(script.strip(" ,").split())
+        words=script.split()
+        # Never cut a voiceover in the middle of a sentence. The editor must send a
+        # complete short script; otherwise reject it before wasting stock footage.
+        if len(words)>70: raise RuntimeError("Сценарий длиннее 70 слов — сократи его целиком, без обрыва финала")
+        tail=words[-1].strip(".,!?—–:;") if words else ""
+        if len(tail)==1 and tail.isalpha(): raise RuntimeError("Сценарий оборван на последнем слове")
+        script=re.sub(r"\s+([,.!?])",r"\1",script)
+        script=re.sub(r"([!?]){2,}",r"\1",script)
+        script=" ".join(script.strip().split())
         if len(script)<30: raise RuntimeError("Сценарий озвучки слишком короткий")
         job["progress"]=5; write_job(job)
         voice=str(payload.get("voice_name") or "ru-RU-DmitryNeural")
@@ -163,7 +167,7 @@ async def render(task_id:str,payload:dict):
         (folder/"concat.txt").write_text("".join(f"file '{path.name}'\n" for path in normalized),"utf-8")
         (folder/"subs.ass").write_text(ass_subtitles(script,duration,alignment),"utf-8")
         run(["ffmpeg","-y","-f","concat","-safe","0","-i",str(folder/"concat.txt"),"-i",str(folder/"voice.mp3"),
-             "-vf",f"ass={folder/'subs.ass'}","-c:v","libx264","-preset","veryfast","-crf","26",
+             "-vf",f"ass={folder/'subs.ass'}","-af","apad=pad_dur=0.65","-c:v","libx264","-preset","veryfast","-crf","26",
              "-threads","1","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k",
              "-maxrate","2800k","-bufsize","5600k","-movflags","+faststart","-shortest",str(folder/"shorts.mp4")])
         job.update(state=1,progress=100,videos=[f"/files/{task_id}.mp4"],error=""); write_job(job)

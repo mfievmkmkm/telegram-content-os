@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import re
 from datetime import datetime
 
 
@@ -81,6 +82,8 @@ class Database:
             return {r[0] for r in db.execute("SELECT source_hash FROM drafts WHERE channel_key=? AND source_hash IS NOT NULL", (channel_key,))}
 
     def save_draft(self, channel_key, format_key, text, hook_score, title="", url="", source_hash=None):
+        if not re.search(r"[A-Za-zА-Яа-яЁё0-9]",re.sub(r"<[^>]+>","",str(text or ""))):
+            raise ValueError("Пустой пост отклонён редактором")
         with self.connect() as db:
             cur = db.execute("INSERT INTO drafts(channel_key,format_key,text,hook_score,source_title,source_url,source_hash,created_at) VALUES(?,?,?,?,?,?,?,?)",
                              (channel_key,format_key,text,hook_score,title,url,source_hash,datetime.now(self.timezone).isoformat()))

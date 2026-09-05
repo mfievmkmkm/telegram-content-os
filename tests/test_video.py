@@ -6,7 +6,8 @@ from content_os.video import VideoFactory
 
 
 def valid_payload():
-    return {"title":"t","hook":"h","voiceover":"v","caption":"c","music_mood":"m","cta":"x",
+    voiceover="Ты видишь красивую карточку и сразу думаешь о прибыли. Но картинка ничего не говорит о спросе. Открой историю сделок, проверь частоту продаж и сравни реальные предложения. Только после этого решай, есть перед тобой актив или просто дорогая картинка. А ты проверяешь рынок до покупки?"
+    return {"title":"t","hook":"h","voiceover":voiceover,"caption":"c","music_mood":"m","cta":"x",
             "scenes":[{"seconds":6,"visual":"pitch","screen_text":"Стоп"} for _ in range(5)]}
 
 
