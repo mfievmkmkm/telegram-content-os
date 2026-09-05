@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
@@ -41,7 +43,6 @@ def compile_scene_specs(payload: dict, audio_duration: float) -> list[SceneSpec]
 
     total = sum(item.seconds for item in specs)
     scale = audio_duration / total if total > 0 else 1.0
-    # Preserve editorial timing proportions while matching the actual synthesized voice.
     return [SceneSpec(max(.75, item.seconds * scale), item.visual, item.screen_text, item.asset_type, item.asset_ref) for item in specs]
 
 
@@ -54,7 +55,6 @@ def write_text_card_copy(path: Path, scene: SceneSpec) -> None:
 def text_card_filter(textfile: Path, channel: str) -> str:
     font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     label = "GIFTS INTELLIGENCE" if channel == "gifts" else "LIGA PROGRESS"
-    # textfile avoids escaping Russian copy inside the ffmpeg filter string.
     return (
         "scale=720:1280,"
         "drawbox=x=40:y=360:w=640:h=560:color=black@0.38:t=fill,"
@@ -88,7 +88,6 @@ def _public_https_url(value: str) -> bool:
     try:
         addresses = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
     except OSError:
-        # DNS can be unavailable in isolated tests; reject unresolved hosts at runtime.
         return False
     for address in addresses:
         try:
@@ -100,10 +99,32 @@ def _public_https_url(value: str) -> bool:
     return bool(addresses)
 
 
+def _inline_image(value: str, max_bytes: int = 2 * 1024 * 1024) -> bytes | None:
+    prefix = "data:image/png;base64,"
+    if not (value or "").startswith(prefix):
+        return None
+    encoded = value[len(prefix):]
+    if len(encoded) > int(max_bytes * 1.4) + 8:
+        raise ValueError("inline image asset is too large")
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("invalid inline image asset") from exc
+    if len(data) > max_bytes:
+        raise ValueError("inline image asset is too large")
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("inline image asset must be PNG")
+    return data
+
+
 async def download_image_asset(url: str, destination: Path, max_bytes: int = 8 * 1024 * 1024) -> Path:
-    """Download one public HTTPS image with SSRF/size/content-type guards."""
+    """Load one bounded inline PNG or public HTTPS image."""
+    inline = _inline_image(url)
+    if inline is not None:
+        destination.write_bytes(inline)
+        return destination
     if not _public_https_url(url):
-        raise ValueError("asset_ref must be a public HTTPS URL")
+        raise ValueError("asset_ref must be a public HTTPS URL or inline PNG")
     timeout = aiohttp.ClientTimeout(total=25, connect=8)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url, allow_redirects=False) as response:
