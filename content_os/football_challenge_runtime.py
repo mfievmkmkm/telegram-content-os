@@ -7,7 +7,7 @@ from aiogram import F, Router
 from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-from .football_challenges import Challenge, daily_challenge
+from .football_challenges import Challenge, LIBRARY, daily_challenge
 
 
 def _text(challenge: Challenge) -> str:
@@ -23,30 +23,47 @@ def _text(challenge: Challenge) -> str:
 def _keyboard(challenge: Challenge) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✚ В черновик Liga", callback_data=f"v2:challenge:draft:{challenge.key}")],
-        [InlineKeyboardButton(text="🔄 Другой челлендж", callback_data="v2:challenge:next")],
+        [InlineKeyboardButton(text="🔄 Другой челлендж", callback_data=f"v2:challenge:next:{challenge.key}")],
         [InlineKeyboardButton(text="🏠 Home", callback_data="panel:home")],
     ])
 
 
 def _select(key: str | None = None) -> Challenge:
     if key:
-        from .football_challenges import LIBRARY
         found = next((item for item in LIBRARY if item.key == key), None)
         if found:
             return found
     return daily_challenge("community", "all", date.today())
 
 
+def _next(current_key: str) -> Challenge:
+    current = _select(current_key)
+    candidates = [item for item in LIBRARY if item.key != current.key]
+    if not candidates:
+        return current
+    seed = hashlib.sha256(f"next:{current.key}:{date.today().isoformat()}".encode()).hexdigest()
+    return candidates[int(seed[:8], 16) % len(candidates)]
+
+
 def install(legacy):
     router = Router(name="football-challenges-v2")
 
-    @router.callback_query(F.data.in_({"v2:challenge", "v2:challenge:next"}))
+    @router.callback_query(F.data == "v2:challenge")
     async def show(c: CallbackQuery):
         if not legacy.admin(c):
             return
         challenge = _select()
         await c.answer()
         await c.message.answer(_text(challenge), parse_mode=ParseMode.HTML, reply_markup=_keyboard(challenge))
+
+    @router.callback_query(F.data.startswith("v2:challenge:next:"))
+    async def reroll(c: CallbackQuery):
+        if not legacy.admin(c):
+            return
+        current_key = c.data.rsplit(":", 1)[-1]
+        challenge = _next(current_key)
+        await c.answer("Другой челлендж")
+        await c.message.edit_text(_text(challenge), parse_mode=ParseMode.HTML, reply_markup=_keyboard(challenge))
 
     @router.callback_query(F.data.startswith("v2:challenge:draft:"))
     async def to_draft(c: CallbackQuery):
