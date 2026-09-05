@@ -99,7 +99,9 @@ def resolve_source(job):
     ref=str(job["source"].get("ref","") or job["source"].get("source_ref",""))
     if ref.startswith("upload:"): return UPLOADS/ref.split(":",1)[1]
     output=UPLOADS/f"{job['id']}.mp4"
-    subprocess.run(["yt-dlp","-f","best[height<=720]","-o",str(output),ref],check=True,timeout=900)
+    format_selector="worst[height>=480][height<=540]/worst[height>=480][height<=720]/best[height<=720]"
+    subprocess.run(["yt-dlp","--no-playlist","--socket-timeout","30","--retries","3","--max-filesize","1500M",
+                    "-f",format_selector,"-o",str(output),ref],check=True,timeout=1200)
     return output
 
 
