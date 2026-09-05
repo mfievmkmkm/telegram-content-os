@@ -5,7 +5,7 @@ def base_env():
     return {
         "BOT_TOKEN": "x", "SUPABASE_URL": "x", "SUPABASE_KEY": "x",
         "LIGA_CHANNEL_ID": "x", "GIFTS_CHANNEL_ID": "x", "LLM_API_KEY": "x",
-        "SHORTS_WORKER_URL": "x", "YANDEX_SPEECHKIT_API_KEY": "x",
+        "SHORTS_WORKER_URL": "x", "YANDEX_SPEECHKIT_API_KEY": "x", "YANDEX_CLOUD_FOLDER_ID": "x",
     }
 
 
@@ -14,6 +14,13 @@ def test_release_gate_fails_closed_on_missing_secret():
     result = evaluate_release(env)
     assert not result.ready
     assert "missing:BOT_TOKEN" in result.blocking
+
+
+def test_release_gate_blocks_incomplete_speechkit():
+    env = base_env(); env.pop("YANDEX_CLOUD_FOLDER_ID")
+    result = evaluate_release(env)
+    assert not result.ready
+    assert "missing:YANDEX_CLOUD_FOLDER_ID" in result.blocking
 
 
 def test_release_gate_never_requires_secret_values_to_be_exposed():
