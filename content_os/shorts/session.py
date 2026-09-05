@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 
 from .models import ShortBrief, ShortScene, ShortStage
 
@@ -30,7 +29,7 @@ class ShortSessionStore:
             data = json.loads(raw)
         except (TypeError, ValueError, json.JSONDecodeError):
             return None
-        brief = ShortBrief(
+        return ShortBrief(
             title=str(data.get("title") or ""),
             hook=str(data.get("hook") or ""),
             voiceover=str(data.get("voiceover") or ""),
@@ -47,7 +46,6 @@ class ShortSessionStore:
             approved=bool(data.get("approved")),
             metadata=dict(data.get("metadata") or {}),
         )
-        return brief
 
     def choose_voice(self, job_id: int | str, voice_preset: str) -> ShortBrief:
         brief = self._required(job_id)
