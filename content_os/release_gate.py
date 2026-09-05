@@ -23,6 +23,7 @@ CORE_REQUIRED = (
 SHORTS_REQUIRED = (
     "SHORTS_WORKER_URL",
     "YANDEX_SPEECHKIT_API_KEY",
+    "YANDEX_CLOUD_FOLDER_ID",
 )
 
 
@@ -38,8 +39,6 @@ def evaluate_release(env: Mapping[str, str], require_shorts: bool = True) -> Gat
     warnings: list[str] = []
     if str(env.get("CONTENT_OS_RUNTIME", "legacy")).lower() != "v2":
         warnings.append("runtime:not_v2")
-    if not str(env.get("YANDEX_CLOUD_FOLDER_ID", "")).strip():
-        warnings.append("speechkit:folder_id_missing")
     if str(env.get("SHORTS_ALLOW_EDGE_FALLBACK", "false")).lower() in {"1", "true", "yes"}:
         warnings.append("shorts:edge_fallback_enabled")
     if str(env.get("AUTO_PUBLISH", "false")).lower() in {"1", "true", "yes"}:
