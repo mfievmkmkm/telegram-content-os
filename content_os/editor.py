@@ -36,6 +36,20 @@ class Editor:
     def format_rule(format_key):
         return FORMAT_RULES.get(format_key,"350–700 знаков. Один сильный угол, без воды и повторов.")
 
+    @staticmethod
+    def complete(text):
+        """Reject visibly truncated LLM answers before they become drafts."""
+        value=plain_text(text).strip(); words=value.split(); tail=words[-1].strip(".,!?—–:;") if words else ""
+        return len(value)>=90 and bool(words) and not (len(tail)==1 and tail.isalpha())
+
+    async def finish(self,cfg,text,context):
+        text=clean_generated_post(text)
+        if not self.complete(text):
+            text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,
+                f"Текст оборван или не закончен. Напиши его заново целиком, без выдуманных фактов. {context}\n\n{text}",.82))
+        if not self.complete(text): raise RuntimeError("LLM дважды вернул оборванный текст — черновик отклонён")
+        return text
+
     async def create(self, channel_key):
         cfg, material = CHANNELS[channel_key], await self.material(channel_key)
         counter=int(self.db.get(f"editorial_rotation:{channel_key}") or 0); self.db.set(f"editorial_rotation:{channel_key}",str(counter+1))
@@ -56,12 +70,12 @@ class Editor:
                  ". Это ориентир для ритма и угла, но не повод повторять тему.") if insights else ""
         prompt = (f"Рубрика: {format_key}. Тематический угол этого выпуска: {lane}. Формат: {self.format_rule(format_key)} "
                   f"Создай оригинальный пост. Не своди каждый Gifts-пост к floor/FOMO и каждый футбольный пост к страху тренера.\n{facts}{style}{trends}{learned}")
-        text = clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt))
+        text = await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,prompt),"Сохрани заданную рубрику и объём.")
         score, reasons = score_hook(plain_text(text))
         if score < 3:
             text = await self.llm(cfg["voice"]+POST_RULES,
                 f"Хук получил {score}/5. Проблемы: {', '.join(reasons)}. Перепиши весь пост, начни намного сильнее.\n\n{text}",.95)
-            text = clean_generated_post(text)
+            text = await self.finish(cfg,text,"Сохрани заданную рубрику и объём.")
             score, _ = score_hook(plain_text(text))
         text=decorate_post(text,channel_key)
         digest = hashlib.sha256(material["url"].encode()).hexdigest() if material["url"] else None
@@ -79,11 +93,13 @@ class Editor:
     async def create_gifts_data_post(self,facts):
         if not facts: raise RuntimeError("Рыночные источники не вернули пригодных данных")
         prompt=("Создай пост только по фактам ниже. Выбери один неожиданный конфликт, а не перечисляй всё. "
-                "Не называй это сигналом на покупку. Все использованные цифры сохрани точно.\n\nДАННЫЕ:\n"+facts)
-        text=clean_generated_post(await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,prompt,.8)); score,_=score_hook(plain_text(text))
+                "Не называй это сигналом на покупку. Все использованные цифры сохрани точно. Данные каталога НЕ доказывают "
+                "ликвидность, продажи, спрос, сделки, floor или будущую цену — запрещено делать такие выводы без прямых данных.\n\nДАННЫЕ:\n"+facts)
+        cfg=CHANNELS["gifts"]
+        text=await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,prompt,.8),"Не делай выводов, которых нет в данных."); score,_=score_hook(plain_text(text))
         if score<3:
             text=await self.llm(CHANNELS["gifts"]["voice"]+POST_RULES,f"Перепиши с более сильным хуком. Данные не меняй.\n{text}",.9)
-            text=clean_generated_post(text); score,_=score_hook(plain_text(text))
+            text=await self.finish(cfg,text,"Не делай выводов, которых нет в данных."); score,_=score_hook(plain_text(text))
         text=decorate_post(text,"gifts")
         return self.db.save_draft("gifts","data_desk",text,score,"Gifts Data Desk","",None)
 
@@ -121,8 +137,9 @@ class Editor:
         prompt=(f"Рубрика: {format_key}. Требования к объёму и структуре: {self.format_rule(format_key)} Создай оригинальный пост по редакторскому заданию. "
                 "Если в задании мало фактов, не додумывай цифры и цитаты: сделай мнение, практический разбор или вопрос.\n\n"
                 f"ЗАДАНИЕ:\n{brief[:8000]}{style}")
-        text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,prompt,.88)); score,reasons=score_hook(plain_text(text))
+        text=await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,prompt,.88),"Сохрани редакторское задание и объём."); score,reasons=score_hook(plain_text(text))
         if score<3:
-            text=clean_generated_post(await self.llm(cfg["voice"]+POST_RULES,f"Усиль хук. Проблемы: {', '.join(reasons)}. Факты не меняй.\n\n{text}",.95)); score,_=score_hook(plain_text(text))
+            text=await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,f"Усиль хук. Проблемы: {', '.join(reasons)}. Факты не меняй.\n\n{text}",.95),"Сохрани редакторское задание и объём."); score,_=score_hook(plain_text(text))
+        if score<3: raise RuntimeError(f"Слабый хук {score}/5 — черновик отклонён, попробуй ещё раз")
         text=decorate_post(text,channel_key); digest=hashlib.sha256(url.encode()).hexdigest() if url else None
         return self.db.save_draft(channel_key,format_key,text,score,title,url,digest)
