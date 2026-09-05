@@ -22,8 +22,6 @@ def install_review(legacy):
     router = Router(name="content-review-v2")
 
     base_keyboard = legacy.keyboard
-    base_gift_card = legacy.gift_card
-    base_liga_card = legacy.liga_card
     base_use_gift = legacy.use_gift_card
     base_use_liga = legacy.use_liga_card
 
@@ -75,7 +73,6 @@ def install_review(legacy):
                 ]),
             )
 
-        director.remember(result)
         channel = draft["channel_key"]
         wants_card = base_use_gift(draft_id) if channel == "gifts" else base_use_liga(draft_id)
         selected = memory.selected_variant(draft_id)
@@ -163,8 +160,6 @@ def install_review(legacy):
         except Exception:
             log.exception("Selected visual preview failed")
 
-    # Publish/review use module globals at call time, so these replacements affect
-    # legacy workflows without copying the large monolithic handler file.
     legacy.keyboard = review_keyboard
     legacy.gift_card = gift_card
     legacy.liga_card = liga_card
