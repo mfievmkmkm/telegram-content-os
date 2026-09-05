@@ -6,7 +6,9 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -14,6 +16,7 @@ import aiohttp
 import edge_tts
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 try:
     from .core import ass_subtitles, clean_script, unique_terms
@@ -27,6 +30,30 @@ ELEVEN_KEY=os.getenv("ELEVENLABS_API_KEY","").strip(); ELEVEN_VOICE=os.getenv("E
 ELEVEN_MODEL=os.getenv("ELEVENLABS_MODEL_ID","eleven_multilingual_v2").strip()
 REQUIRE_ELEVEN=os.getenv("SHORTS_REQUIRE_ELEVENLABS","true").lower() in {"1","true","yes","on"}
 app=FastAPI(title="Content OS Shorts Worker",version="1.0")
+
+
+def remove_task(task_id:str,remove_job=True):
+    shutil.rmtree(TASKS/task_id,ignore_errors=True)
+    if remove_job:
+        try: job_path(task_id).unlink(missing_ok=True)
+        except OSError: pass
+
+
+def cleanup_stale(max_age_seconds=1800):
+    """Generated media is disposable; never let it fill the Railway volume."""
+    now=time.time()
+    for folder in TASKS.iterdir():
+        try:
+            if folder.is_dir() and now-folder.stat().st_mtime>max_age_seconds:
+                remove_task(folder.name)
+        except OSError: continue
+
+
+@app.on_event("startup")
+def startup_cleanup():
+    # A deploy kills in-process renders, so every leftover task is stale.
+    for folder in list(TASKS.iterdir()):
+        if folder.is_dir(): remove_task(folder.name)
 
 
 def authorize(value):
@@ -49,7 +76,7 @@ def health(): return {"ok":True,"service":"content-os-shorts","pexels":bool(PEXE
 
 @app.post("/api/v1/videos")
 def create(payload:dict,background:BackgroundTasks,x_api_key:str|None=Header(None)):
-    authorize(x_api_key); task_id=str(uuid.uuid4()); folder=TASKS/task_id; folder.mkdir(parents=True,exist_ok=True)
+    authorize(x_api_key); cleanup_stale(); task_id=str(uuid.uuid4()); folder=TASKS/task_id; folder.mkdir(parents=True,exist_ok=True)
     job={"task_id":task_id,"state":0,"progress":0,"videos":[],"error":""}; write_job(job)
     (folder/"payload.json").write_text(json.dumps(payload,ensure_ascii=False),"utf-8"); background.add_task(render,task_id,payload)
     return {"status":200,"data":{"task_id":task_id}}
@@ -64,7 +91,8 @@ def status(task_id:str,x_api_key:str|None=Header(None)):
 def video(task_id:str):
     path=TASKS/task_id/"shorts.mp4"
     if not path.exists(): raise HTTPException(404,"video not ready")
-    return FileResponse(path,media_type="video/mp4",filename=f"shorts-{task_id}.mp4")
+    return FileResponse(path,media_type="video/mp4",filename=f"shorts-{task_id}.mp4",
+                        background=BackgroundTask(remove_task,task_id))
 
 
 async def pexels_clips(terms:list[str],folder:Path,limit=10)->list[Path]:
@@ -174,3 +202,6 @@ async def render(task_id:str,payload:dict):
         job.update(state=1,progress=100,videos=[f"/files/{task_id}.mp4"],error=""); write_job(job)
     except Exception as exc:
         job.update(state=-1,error=f"{type(exc).__name__}: {str(exc)[:700]}"); write_job(job)
+        # Preserve the small status JSON long enough for the editor to read the
+        # error, but remove downloaded stock clips and rendered fragments.
+        shutil.rmtree(folder,ignore_errors=True)
