@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from .growth.attribution import normalize_event_type
 from .release_gate import evaluate_release
+from .system_health import subsystem_statuses
 
 
 def operator_keyboard() -> InlineKeyboardMarkup:
@@ -118,12 +119,16 @@ def install(legacy):
         if not legacy.admin(c):
             return
         gate = evaluate_release(os.environ, require_shorts=True)
-        blocking = "\n".join(f"• {html.escape(item)}" for item in gate.blocking) or "• блокеров по env нет"
+        rows = []
+        for item in subsystem_statuses(os.environ):
+            icon = "✅" if item.ready else "❌"
+            detail = item.warning or ("missing: " + ", ".join(item.missing) if item.missing else "ready")
+            rows.append(f"{icon} <b>{html.escape(item.title)}</b> · {html.escape(detail)}")
         warnings = "\n".join(f"• {html.escape(item)}" for item in gate.warnings) or "• предупреждений нет"
         text = (
             f"<b>⚙️ SYSTEM · {'READY' if gate.ready else 'NOT READY'}</b>\n\n"
-            f"<b>Blocking</b>\n{blocking}\n\n<b>Warnings</b>\n{warnings}\n\n"
-            "<i>Значения секретов никогда не показываются — только названия отсутствующих переменных</i>"
+            f"{'\n'.join(rows)}\n\n<b>Rollout warnings</b>\n{warnings}\n\n"
+            "<i>Секреты не показываются. Экран выводит только факт готовности и имена отсутствующих переменных</i>"
         )
         await c.answer()
         await c.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=_nav())
