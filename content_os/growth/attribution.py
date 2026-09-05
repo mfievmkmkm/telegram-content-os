@@ -2,35 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, Mapping
-from urllib.parse import parse_qsl, urlencode
 
-_ALLOWED = {"project", "content", "format", "offer", "campaign"}
+from ..campaigns import CampaignRef, campaign_source, parse_campaign
 
 
-@dataclass(frozen=True)
-class CampaignRef:
-    project: str
-    content: str
-    format: str = ""
-    offer: str = ""
-    campaign: str = ""
-
-    def token(self) -> str:
-        values = {
-            "project": self.project,
-            "content": self.content,
-            "format": self.format,
-            "offer": self.offer,
-            "campaign": self.campaign,
-        }
-        return urlencode([(key, value) for key, value in values.items() if value])
-
-    @classmethod
-    def parse(cls, token: str) -> "CampaignRef":
-        values = {key: value for key, value in parse_qsl(token) if key in _ALLOWED}
-        if not values.get("project") or not values.get("content"):
-            raise ValueError("campaign token must contain project and content")
-        return cls(**values)
+_EVENT_ALIASES = {
+    "landing": "visit",
+    "visit": "visit",
+    "bot_start": "bot_start",
+    "recommendation": "lead",
+    "lead": "lead",
+    "offer_view": "lead",
+    "order_created": "order",
+    "order": "order",
+    "paid": "sale",
+    "payment": "sale",
+    "sale": "sale",
+}
 
 
 @dataclass(frozen=True)
@@ -47,17 +35,47 @@ class FunnelSummary:
         return self.bot_starts / self.visits * 100 if self.visits else 0.0
 
     @property
+    def lead_to_order(self) -> float:
+        return self.orders / self.leads * 100 if self.leads else 0.0
+
+    @property
     def lead_to_sale(self) -> float:
         return self.sales / self.leads * 100 if self.leads else 0.0
+
+    @property
+    def order_to_sale(self) -> float:
+        return self.sales / self.orders * 100 if self.orders else 0.0
+
+
+def normalize_event_type(event_type: str) -> str:
+    return _EVENT_ALIASES.get((event_type or "").strip().lower(), "")
+
+
+def source_matches(event_source: str, source_token: str) -> bool:
+    """Match both compact Telegram payload tokens and canonical source strings."""
+    event_source = str(event_source or "").strip()
+    source_token = str(source_token or "").strip()
+    if event_source == source_token:
+        return True
+
+    left = parse_campaign(event_source)
+    right = parse_campaign(source_token)
+    if left and right:
+        return left == right
+    if left:
+        return campaign_source(left) == source_token
+    if right:
+        return campaign_source(right) == event_source
+    return False
 
 
 def build_funnel_summary(events: Iterable[Mapping], source_token: str) -> FunnelSummary:
     counts = {"visit": 0, "bot_start": 0, "lead": 0, "order": 0, "sale": 0}
     revenue = 0.0
     for event in events:
-        if str(event.get("source") or "") != source_token:
+        if not source_matches(str(event.get("source") or ""), source_token):
             continue
-        event_type = str(event.get("event_type") or "")
+        event_type = normalize_event_type(str(event.get("event_type") or ""))
         if event_type in counts:
             counts[event_type] += 1
         if event_type == "sale":
@@ -70,3 +88,14 @@ def build_funnel_summary(events: Iterable[Mapping], source_token: str) -> Funnel
         sales=counts["sale"],
         revenue=revenue,
     )
+
+
+__all__ = [
+    "CampaignRef",
+    "FunnelSummary",
+    "build_funnel_summary",
+    "campaign_source",
+    "normalize_event_type",
+    "parse_campaign",
+    "source_matches",
+]
