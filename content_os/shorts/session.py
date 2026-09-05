@@ -61,6 +61,20 @@ class ShortSessionStore:
         self.save(job_id, brief)
         return brief
 
+    def choose_subtitle(self, job_id: int | str, subtitle_preset: str) -> ShortBrief:
+        brief = self._required(job_id)
+        brief.subtitle_preset = subtitle_preset
+        brief.invalidate_from(ShortStage.CAPTIONS)
+        self.save(job_id, brief)
+        return brief
+
+    def replace_scenes(self, job_id: int | str, scenes: list[ShortScene]) -> ShortBrief:
+        brief = self._required(job_id)
+        brief.scenes = scenes
+        brief.invalidate_from(ShortStage.SCENES)
+        self.save(job_id, brief)
+        return brief
+
     def approve(self, job_id: int | str) -> ShortBrief:
         brief = self._required(job_id)
         brief.approve_script()
