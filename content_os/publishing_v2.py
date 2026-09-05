@@ -7,6 +7,7 @@ from datetime import datetime
 from aiogram.enums import ParseMode
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
+from .content_quality import build_fingerprint
 from .formatting import plain_text, telegram_html
 from .visual_renderer import render_card
 
@@ -110,6 +111,14 @@ class PublishingService:
             published_at=datetime.now(legacy.settings.timezone).isoformat(),
             published_message_id=message_id,
         )
+        fingerprint = build_fingerprint(
+            text=draft["text"],
+            topic=str(draft.get("source_title") or draft["format_key"]) if isinstance(draft, dict) else str(draft["source_title"] or draft["format_key"]),
+            angle=str(draft["format_key"]),
+            format_key=str(draft["format_key"]),
+            visual_type=f"card_v{selected}" if card_bytes and selected is not None else "card" if card_bytes else "source_or_text",
+        )
+        self.memory.remember_content(draft["channel_key"], fingerprint, draft["text"], draft_id=draft["id"])
         return mode, premium_error
 
     async def _sales_cta(self, draft):
