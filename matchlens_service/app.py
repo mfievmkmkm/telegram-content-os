@@ -26,6 +26,18 @@ API_KEY=os.getenv("MATCHLENS_API_KEY","").strip(); MODEL=os.getenv("MATCHLENS_MO
 app=FastAPI(title="MatchLens",version="0.1.0"); model=None; model_lock=threading.Lock()
 
 
+@app.on_event("startup")
+def recover_interrupted_jobs():
+    """Background work cannot survive a Railway restart; never leave stale 5% jobs forever."""
+    for path in JOBS.glob("*.json"):
+        try:
+            job=json.loads(path.read_text("utf-8"))
+            if job.get("status") in {"queued","processing"}:
+                job.update(status="failed",error="Worker перезапустился во время разбора. Запусти задание заново")
+                write_job(job)
+        except (OSError,ValueError,KeyError): continue
+
+
 class MatchIn(BaseModel):
     source: dict
     target: dict
