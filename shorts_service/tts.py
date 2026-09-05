@@ -63,6 +63,14 @@ class ElevenLabsProvider(TTSProvider):
 
 class SpeechKitProvider(TTSProvider):
     name = "speechkit"
+    # Keep the worker compatible with legacy Editor requests that still send
+    # Microsoft Edge voice IDs such as ru-RU-DmitryNeural. SpeechKit expects
+    # its own short voice identifiers instead.
+    VOICE_ALIASES = {
+        "ru-ru-dmitryneural": "anton",
+        "ru-ru-svetlananeural": "lera",
+        "ru-ru-dariyaneural": "marina",
+    }
 
     def __init__(self):
         self.api_key = os.getenv("YANDEX_SPEECHKIT_API_KEY", "").strip()
@@ -72,6 +80,21 @@ class SpeechKitProvider(TTSProvider):
     def ready(self) -> bool:
         return bool(self.api_key and self.folder_id)
 
+    @classmethod
+    def normalize_voice(cls, voice: str) -> str:
+        requested = (voice or "").strip()
+        if not requested:
+            return "lera"
+        lowered = requested.lower()
+        if lowered in cls.VOICE_ALIASES:
+            return cls.VOICE_ALIASES[lowered]
+        # Neural-style locale IDs belong to Edge/Azure, never forward them to
+        # SpeechKit. Unknown SpeechKit-native IDs are left intact so new voices
+        # can be adopted without a worker release.
+        if "neural" in lowered or lowered.startswith("ru-ru-"):
+            return "lera"
+        return requested
+
     async def synthesize(self, text: str, path: Path, voice: str, speed: float) -> TTSResult:
         if not self.ready:
             raise RuntimeError("Yandex SpeechKit не настроен")
@@ -79,7 +102,7 @@ class SpeechKitProvider(TTSProvider):
         data = {
             "text": text,
             "lang": "ru-RU",
-            "voice": voice or "lera",
+            "voice": self.normalize_voice(voice),
             "speed": f"{max(.6, min(1.5, speed)):.2f}",
             "format": "mp3",
             "folderId": self.folder_id,
