@@ -63,14 +63,20 @@ class ElevenLabsProvider(TTSProvider):
 
 class SpeechKitProvider(TTSProvider):
     name = "speechkit"
-    # Keep the worker compatible with legacy Editor requests that still send
-    # Microsoft Edge voice IDs such as ru-RU-DmitryNeural. SpeechKit expects
-    # its own short voice identifiers instead.
+    # This worker currently calls SpeechKit REST API v1. Some newer voices
+    # (for example anton/lera/marina) are v3-only in the current catalogue,
+    # so legacy/editor voice names must resolve to voices that v1 accepts.
     VOICE_ALIASES = {
-        "ru-ru-dmitryneural": "anton",
-        "ru-ru-svetlananeural": "lera",
-        "ru-ru-dariyaneural": "marina",
+        "ru-ru-dmitryneural": "ermil",
+        "ru-ru-svetlananeural": "jane",
+        "ru-ru-dariyaneural": "alena",
+        "anton": "ermil",
+        "lera": "jane",
+        "marina": "alena",
+        "alexander": "zahar",
+        "kirill": "filipp",
     }
+    V1_VOICES = {"alena", "filipp", "ermil", "jane", "omazh", "zahar", "madi_ru"}
 
     def __init__(self):
         self.api_key = os.getenv("YANDEX_SPEECHKIT_API_KEY", "").strip()
@@ -84,16 +90,15 @@ class SpeechKitProvider(TTSProvider):
     def normalize_voice(cls, voice: str) -> str:
         requested = (voice or "").strip()
         if not requested:
-            return "lera"
+            return "jane"
         lowered = requested.lower()
         if lowered in cls.VOICE_ALIASES:
             return cls.VOICE_ALIASES[lowered]
-        # Neural-style locale IDs belong to Edge/Azure, never forward them to
-        # SpeechKit. Unknown SpeechKit-native IDs are left intact so new voices
-        # can be adopted without a worker release.
-        if "neural" in lowered or lowered.startswith("ru-ru-"):
-            return "lera"
-        return requested
+        if lowered in cls.V1_VOICES:
+            return lowered
+        # Never forward Edge/Azure IDs or v3-only/unknown names to the v1
+        # endpoint. Use a stable v1 Russian voice instead.
+        return "jane"
 
     async def synthesize(self, text: str, path: Path, voice: str, speed: float) -> TTSResult:
         if not self.ready:
