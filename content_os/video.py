@@ -103,7 +103,7 @@ class VideoFactory:
                         if response.status>=400: raise RuntimeError(f"скачивание MP4: HTTP {response.status}")
                         content=await response.read()
                         if len(content)>49*1024*1024: raise RuntimeError("готовое видео больше лимита Telegram 49 МБ")
-                        return task_id,content,str(status.get("voice_provider") or "unknown")
+                        return task_id,content,str(status.get("voice_provider") or "unknown"),str(status.get("voice_error") or "")[:240]
             raise RuntimeError(f"рендер не завершился за {self.settings.mpt_timeout_minutes} минут")
 
     def mpt_payload(self,data):
