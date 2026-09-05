@@ -16,4 +16,6 @@ jobs:
       - run: pip install -r requirements.txt -r shorts_service/requirements.txt
       - run: python -m pytest -q
       - run: python -m compileall -q content_os shorts_service
-      - run: python -c "import shorts_service.app_v2; import content_os.main_v2"
+      - run: python -c "import shorts_service.app_v2; import content_os.v2_runtime; import content_os.review_runtime; import content_os.publishing_v2"
+        env:
+          SHORTS_DATA_DIR: /tmp/content-os-shorts
