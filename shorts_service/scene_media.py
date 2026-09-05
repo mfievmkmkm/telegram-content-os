@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
 from pathlib import Path
+import socket
 import textwrap
+from urllib.parse import urlparse
+
+import aiohttp
 
 
 @dataclass(frozen=True)
@@ -60,4 +65,64 @@ def text_card_filter(textfile: Path, channel: str) -> str:
     )
 
 
-SUPPORTED_ASSET_TYPES = {"stock_video", "text_scene"}
+def image_filter() -> str:
+    return (
+        "scale=760:1352:force_original_aspect_ratio=increase,"
+        "crop=720:1280:(iw-ow)/2:(ih-oh)/2,"
+        "eq=contrast=1.03:saturation=1.05,fps=25"
+    )
+
+
+def _public_https_url(value: str) -> bool:
+    parsed = urlparse((value or "").strip())
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return False
+    host = parsed.hostname.lower()
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_global
+    except ValueError:
+        pass
+    try:
+        addresses = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        # DNS can be unavailable in isolated tests; reject unresolved hosts at runtime.
+        return False
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address[4][0])
+        except ValueError:
+            return False
+        if not ip.is_global:
+            return False
+    return bool(addresses)
+
+
+async def download_image_asset(url: str, destination: Path, max_bytes: int = 8 * 1024 * 1024) -> Path:
+    """Download one public HTTPS image with SSRF/size/content-type guards."""
+    if not _public_https_url(url):
+        raise ValueError("asset_ref must be a public HTTPS URL")
+    timeout = aiohttp.ClientTimeout(total=25, connect=8)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, allow_redirects=False) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"asset HTTP {response.status}")
+            content_type = (response.headers.get("content-type") or "").split(";", 1)[0].lower()
+            if content_type not in {"image/jpeg", "image/png", "image/webp"}:
+                raise ValueError(f"unsupported image content type: {content_type or 'unknown'}")
+            declared = int(response.headers.get("content-length") or 0)
+            if declared and declared > max_bytes:
+                raise ValueError("image asset is too large")
+            data = bytearray()
+            async for chunk in response.content.iter_chunked(64 * 1024):
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    raise ValueError("image asset is too large")
+    destination.write_bytes(data)
+    return destination
+
+
+IMAGE_ASSET_TYPES = {"brand_card", "screenshot", "meme", "market_chart", "generated_image", "user_asset"}
+SUPPORTED_ASSET_TYPES = {"stock_video", "text_scene", *IMAGE_ASSET_TYPES}
