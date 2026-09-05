@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import asdict
 
+from ..visual_renderer import render_card
 from .models import ShortBrief
 from .presets import DELIVERY_PRESETS, VOICE_PRESETS, voice
 from .render_client import ShortRenderClient
@@ -71,6 +73,25 @@ class ShortsStudio:
             raise RuntimeError("Сначала подтверди сценарий")
         return await self.renderer.render(self.worker_payload(brief), progress)
 
+    def _scene_payloads(self, brief: ShortBrief) -> list[dict]:
+        scenes = [asdict(scene) for scene in brief.scenes]
+        if brief.draft_id is None or not any(scene.get("asset_type") == "brand_card" and not scene.get("asset_ref") for scene in scenes):
+            return scenes
+        draft = self.db.draft(int(brief.draft_id))
+        if not draft:
+            return scenes
+        try:
+            card = render_card(brief.channel, draft["text"], draft["format_key"], 0)
+            # Inline data asset keeps editor/worker services decoupled from shared disk
+            # or public object storage. Worker enforces a strict decoded-size limit.
+            asset_ref = "data:image/png;base64," + base64.b64encode(card).decode("ascii")
+        except Exception:
+            return scenes
+        for scene in scenes:
+            if scene.get("asset_type") == "brand_card" and not scene.get("asset_ref"):
+                scene["asset_ref"] = asset_ref
+        return scenes
+
     def worker_payload(self, brief: ShortBrief) -> dict:
         preset = voice(brief.voice_preset)
         return {
@@ -90,8 +111,7 @@ class ShortsStudio:
             "voice_rate": preset.speed,
             "subtitle_enabled": True,
             "subtitle_preset": brief.subtitle_preset,
-            "scenes": [asdict(scene) for scene in brief.scenes],
-            # Keep legacy search terms as a fallback while scene assets are rolled out.
+            "scenes": self._scene_payloads(brief),
             "video_terms": [scene.visual for scene in brief.scenes if scene.visual][:7],
             "draft_id": brief.draft_id,
             "channel": brief.channel,
