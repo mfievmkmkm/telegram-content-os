@@ -21,6 +21,7 @@ def test_alignment_chunks_follow_real_voice_timing():
       "character_start_times_seconds":[i*.05 for i in range(len(text))],
       "character_end_times_seconds":[(i+1)*.05 for i in range(len(text))]}
     chunks=alignment_chunks(alignment,2)
-    assert chunks[0][0]=="Смотри рынок сейчас"
+    assert chunks[0][0]=="Смотри рынок"
+    assert chunks[1][0]=="сейчас"
     assert chunks[0][1]==0
     assert chunks[-1][2]>.8
