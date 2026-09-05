@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from . import __main__ as legacy
+from .football_challenge_runtime import install as install_football_challenges
 from .operator_runtime import install as install_operator
 from .persistence_v2 import install as install_persistence
 from .publishing_v2 import install_publishing
@@ -17,6 +18,7 @@ from .v2_runtime import install
 persistence = install_persistence(legacy.db)
 studio, v2_router = install(legacy)
 operator_router = install_operator(legacy)
+football_challenge_router = install_football_challenges(legacy)
 remix, remix_router = install_remix(legacy)
 director, editorial_memory, review_router = install_review(legacy)
 publishing = install_publishing(legacy, editorial_memory)
