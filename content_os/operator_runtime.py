@@ -31,6 +31,14 @@ def _nav() -> InlineKeyboardMarkup:
     ])
 
 
+def _projects_nav() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚽ Challenge дня", callback_data="v2:challenge"), InlineKeyboardButton(text="⚽ Liga создать", callback_data="panel:generate")],
+        [InlineKeyboardButton(text="🎁 Gifts создать", callback_data="panel:generate"), InlineKeyboardButton(text="🎬 Studio", callback_data="panel:shorts")],
+        [InlineKeyboardButton(text="🛒 Sales", callback_data="panel:orders"), InlineKeyboardButton(text="🏠 Home", callback_data="panel:home")],
+    ])
+
+
 def _safe_count(call, default=0):
     try:
         return len(call())
@@ -73,7 +81,7 @@ def install(legacy):
             "🧪 <b>Content OS Lab</b>\nSales · услуги · автоматизация · эксперименты"
         )
         await c.answer()
-        await c.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=_nav())
+        await c.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=_projects_nav())
 
     @router.callback_query(F.data == "v2:growth")
     async def growth(c: CallbackQuery):
