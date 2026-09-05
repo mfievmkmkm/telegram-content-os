@@ -1,26 +1,30 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 
-from .models import ShortBrief, ShortStage
-from .presets import voice
+from .models import ShortBrief
+from .presets import DELIVERY_PRESETS, VOICE_PRESETS, voice
+from .render_client import ShortRenderClient
 from .script import ShortScriptService
 from .session import ShortSessionStore
 
 
 class ShortsStudio:
-    """Coordinates review-first Shorts production without coupling Telegram UI to rendering details."""
+    """Coordinates review-first Shorts production without coupling Telegram UI to render internals."""
 
-    def __init__(self, editor, database, legacy_video_factory):
+    def __init__(self, settings, editor, database):
+        self.db = database
         self.scripts = ShortScriptService(editor)
         self.sessions = ShortSessionStore(database)
-        self.renderer = legacy_video_factory
+        self.renderer = ShortRenderClient(settings)
 
     async def start(self, draft, delivery_key: str = "punchy") -> tuple[int | str, ShortBrief]:
-        brief = await self.scripts.prepare(draft, delivery_key)
-        # Reuse the existing video-job table to keep IDs stable across old/new UI.
+        normalized = delivery_key if delivery_key in DELIVERY_PRESETS else "punchy"
+        brief = await self.scripts.prepare(draft, normalized)
         payload = self.worker_payload(brief)
-        job_id = self.renderer.db.save_video_job(draft["id"], __import__("json").dumps(payload, ensure_ascii=False, indent=2))
+        # Reuse the existing video-job table so migration does not require a new schema.
+        job_id = self.db.save_video_job(draft["id"], json.dumps(payload, ensure_ascii=False, indent=2))
         self.sessions.save(job_id, brief)
         return job_id, brief
 
@@ -30,11 +34,10 @@ class ShortsStudio:
         return self.sessions.replace_script(job_id, updated)
 
     def choose_voice(self, job_id: int | str, preset_key: str) -> ShortBrief:
-        voice(preset_key)  # normalize unknown keys to a safe preset through the domain registry
-        return self.sessions.choose_voice(job_id, preset_key if preset_key in __import__("content_os.shorts.presets", fromlist=["VOICE_PRESETS"]).VOICE_PRESETS else "auto_ru")
+        normalized = preset_key if preset_key in VOICE_PRESETS else "auto_ru"
+        return self.sessions.choose_voice(job_id, normalized)
 
     def choose_style(self, job_id: int | str, preset_key: str) -> ShortBrief:
-        from .presets import DELIVERY_PRESETS
         normalized = preset_key if preset_key in DELIVERY_PRESETS else "punchy"
         return self.sessions.choose_style(job_id, normalized)
 
@@ -45,30 +48,33 @@ class ShortsStudio:
         brief = self._required(job_id)
         if not brief.approved:
             raise RuntimeError("Сначала подтверди сценарий")
-        payload = self.worker_payload(brief)
-        return await self.renderer.render(payload, progress)
+        return await self.renderer.render(self.worker_payload(brief), progress)
 
     def worker_payload(self, brief: ShortBrief) -> dict:
         preset = voice(brief.voice_preset)
-        scenes = [asdict(scene) for scene in brief.scenes]
         return {
-            "title": brief.title,
-            "hook": brief.hook,
-            "voiceover": brief.voiceover,
+            "video_subject": brief.title,
+            "video_script": brief.voiceover,
+            "video_aspect": "9:16",
+            "video_source": "scene_assets",
+            "video_count": 1,
+            "brand_channel": brief.channel,
+            "hook_text": brief.hook,
+            "cta_text": brief.cta,
             "caption": brief.caption,
             "music_mood": brief.music_mood,
-            "cta": brief.cta,
-            "draft_id": brief.draft_id,
-            "channel": brief.channel,
-            "aspect_ratio": "9:16",
-            "language": "ru",
-            "delivery_preset": brief.delivery_preset,
             "voice_preset": brief.voice_preset,
             "voice_provider": preset.provider,
             "voice_name": preset.voice,
             "voice_rate": preset.speed,
+            "subtitle_enabled": True,
             "subtitle_preset": brief.subtitle_preset,
-            "scenes": scenes,
+            "scenes": [asdict(scene) for scene in brief.scenes],
+            # Keep legacy search terms as a fallback while scene assets are rolled out.
+            "video_terms": [scene.visual for scene in brief.scenes if scene.visual][:7],
+            "draft_id": brief.draft_id,
+            "channel": brief.channel,
+            "delivery_preset": brief.delivery_preset,
         }
 
     def _required(self, job_id: int | str) -> ShortBrief:
