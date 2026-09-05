@@ -1,6 +1,13 @@
+import asyncio
+import base64
 from pathlib import Path
 
-from shorts_service.scene_media import IMAGE_ASSET_TYPES, SUPPORTED_ASSET_TYPES, _public_https_url, compile_scene_specs, write_text_card_copy
+import pytest
+
+from shorts_service.scene_media import IMAGE_ASSET_TYPES, SUPPORTED_ASSET_TYPES, _public_https_url, compile_scene_specs, download_image_asset, write_text_card_copy
+
+
+PNG_1X1 = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 
 
 def test_scene_specs_preserve_ratios_and_match_audio_duration():
@@ -32,3 +39,15 @@ def test_remote_asset_guard_rejects_non_https_and_private_hosts():
     assert not _public_https_url("https://localhost/a.png")
     assert not _public_https_url("https://127.0.0.1/a.png")
     assert not _public_https_url("file:///etc/passwd")
+
+
+def test_inline_png_asset_is_written_without_network(tmp_path: Path):
+    ref = "data:image/png;base64," + base64.b64encode(PNG_1X1).decode("ascii")
+    path = asyncio.run(download_image_asset(ref, tmp_path / "card.img"))
+    assert path.read_bytes() == PNG_1X1
+
+
+def test_inline_asset_rejects_non_png_payload(tmp_path: Path):
+    ref = "data:image/png;base64," + base64.b64encode(b"not-a-png").decode("ascii")
+    with pytest.raises(ValueError, match="must be PNG"):
+        asyncio.run(download_image_asset(ref, tmp_path / "bad.img"))
