@@ -6,8 +6,12 @@ from dataclasses import asdict
 from .models import ShortBrief
 from .presets import DELIVERY_PRESETS, VOICE_PRESETS, voice
 from .render_client import ShortRenderClient
+from .scenes import ShortSceneService
 from .script import ShortScriptService
 from .session import ShortSessionStore
+
+
+SUBTITLE_PRESETS = {"punch", "clean", "sport", "meme"}
 
 
 class ShortsStudio:
@@ -16,6 +20,7 @@ class ShortsStudio:
     def __init__(self, settings, editor, database):
         self.db = database
         self.scripts = ShortScriptService(editor)
+        self.scenes = ShortSceneService(editor)
         self.sessions = ShortSessionStore(database)
         self.renderer = ShortRenderClient(settings)
 
@@ -33,13 +38,29 @@ class ShortsStudio:
         updated = await self.scripts.rewrite(current, mode)
         return self.sessions.replace_script(job_id, updated)
 
+    async def restyle(self, job_id: int | str, preset_key: str) -> ShortBrief:
+        normalized = preset_key if preset_key in DELIVERY_PRESETS else "punchy"
+        current = self.sessions.choose_style(job_id, normalized)
+        if current.draft_id is None:
+            raise RuntimeError("У Shorts потеряна связь с исходным постом")
+        draft = self.db.draft(int(current.draft_id))
+        if not draft:
+            raise RuntimeError("Исходный пост больше не найден")
+        updated = await self.scripts.prepare(draft, normalized)
+        return self.sessions.replace_script(job_id, updated)
+
+    async def remix_scenes(self, job_id: int | str) -> ShortBrief:
+        current = self._required(job_id)
+        scenes = await self.scenes.remix(current)
+        return self.sessions.replace_scenes(job_id, scenes)
+
     def choose_voice(self, job_id: int | str, preset_key: str) -> ShortBrief:
         normalized = preset_key if preset_key in VOICE_PRESETS else "auto_ru"
         return self.sessions.choose_voice(job_id, normalized)
 
-    def choose_style(self, job_id: int | str, preset_key: str) -> ShortBrief:
-        normalized = preset_key if preset_key in DELIVERY_PRESETS else "punchy"
-        return self.sessions.choose_style(job_id, normalized)
+    def choose_subtitle(self, job_id: int | str, preset_key: str) -> ShortBrief:
+        normalized = preset_key if preset_key in SUBTITLE_PRESETS else "punch"
+        return self.sessions.choose_subtitle(job_id, normalized)
 
     def approve(self, job_id: int | str) -> ShortBrief:
         return self.sessions.approve(job_id)
