@@ -10,17 +10,15 @@ def clean_script(value:str)->str:
     return re.sub(r"\s{2,}"," ",text).strip(" ,")
 
 
-def caption_chunks(script:str,max_words:int=3)->list[str]:
+def caption_chunks(script:str,max_words:int=2)->list[str]:
     """Short punchy captions that remain readable on a phone."""
     words=clean_script(script).split()
     chunks=[words[index:index+max_words] for index in range(0,len(words),max_words)]
-    # Never flash a lonely final word: attach it to the preceding phrase.
-    if len(chunks)>1 and len(chunks[-1])==1: chunks[-2].extend(chunks.pop())
     chunks=[" ".join(chunk) for chunk in chunks]
     return chunks or ["СМОТРИ ДО КОНЦА"]
 
 
-def alignment_chunks(alignment:dict,max_words:int=3)->list[tuple[str,float,float]]:
+def alignment_chunks(alignment:dict,max_words:int=2)->list[tuple[str,float,float]]:
     """Convert character timing into short mobile caption phrases."""
     chars=alignment.get("characters") or []
     starts=alignment.get("character_start_times_seconds") or []
@@ -38,8 +36,6 @@ def alignment_chunks(alignment:dict,max_words:int=3)->list[tuple[str,float,float
     for index in range(0,len(words),max_words):
         group=words[index:index+max_words]
         result.append((" ".join(word[0] for word in group),group[0][1],group[-1][2]))
-    if len(result)>1 and len(result[-1][0].split())==1:
-        last=result.pop(); previous=result.pop(); result.append((previous[0]+" "+last[0],previous[1],last[2]))
     return result
 
 
@@ -67,7 +63,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,DejaVu Sans,68,&H00FFFFFF,&H00FFFFFF,&H00101010,&HA0000000,-1,0,0,0,100,100,0,0,3,3,1,2,52,52,315,1
+Style: Main,DejaVu Sans,56,&H00FFFFFF,&H00FFFFFF,&H00101010,&HA0000000,-1,0,0,0,100,100,0,0,3,3,1,2,74,74,315,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
