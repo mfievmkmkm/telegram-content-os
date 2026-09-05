@@ -3,15 +3,17 @@ from __future__ import annotations
 import asyncio
 
 from . import __main__ as legacy
+from .publishing_v2 import install_publishing
 from .review_runtime import install_review
 from .v2_runtime import install
 
 
 # Install isolated v2 modules over the stable runtime. The legacy module still owns
-# scheduling, publishing, shop, analytics and existing commands until each domain
-# is migrated deliberately.
+# scheduling, shop, analytics and existing commands until each domain is migrated
+# deliberately.
 studio, v2_router = install(legacy)
 director, editorial_memory, review_router = install_review(legacy)
+publishing = install_publishing(legacy, editorial_memory)
 
 
 async def main():
