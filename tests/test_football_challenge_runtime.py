@@ -1,4 +1,4 @@
-from content_os.football_challenge_runtime import _select, _text
+from content_os.football_challenge_runtime import _next, _select, _text
 
 
 def test_challenge_runtime_renders_metric_and_proof():
@@ -12,3 +12,7 @@ def test_challenge_runtime_renders_metric_and_proof():
 
 def test_known_challenge_key_is_stable():
     assert _select("keeper_set").key == "keeper_set"
+
+
+def test_reroll_returns_a_different_challenge():
+    assert _next("keeper_set").key != "keeper_set"
