@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,27 @@ CATALOG = (
     EmojiIntent("⚽", "football", ("liga",), ("мяч", "матч", "футбол", "поле", "игрок")),
     EmojiIntent("⚡", "speed", ("liga",), ("скорост", "рывок", "реакц", "быстр", "темп"), "high"),
 )
+
+# One coherent adaptive family: it follows Telegram's light/dark theme instead
+# of mixing unrelated colourful packs. Later packs only fill missing meanings;
+# the first matching glyph wins, preserving a consistent visual language.
+RECOMMENDED_PACKS = ("AdaptiveIcons", "AdaptiveLines", "AdaptivePremium")
+BRAND_FALLBACKS = frozenset(
+    {item.fallback.replace("\ufe0f", "") for item in CATALOG}
+    | {"🎁", "📈", "📊", "💰", "✅", "❌", "⭐", "🚀", "🔒", "🛡", "💡", "🤝"}
+)
+
+
+def custom_emoji_mapping(sticker_sets: Iterable[object]) -> dict[str, str]:
+    """Extract a restrained brand dictionary from Telegram custom-emoji sets."""
+    result: dict[str, str] = {}
+    for sticker_set in sticker_sets:
+        for sticker in getattr(sticker_set, "stickers", ()) or ():
+            fallback = str(getattr(sticker, "emoji", "") or "").replace("\ufe0f", "")
+            emoji_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+            if fallback in BRAND_FALLBACKS and emoji_id.isdigit():
+                result.setdefault(fallback, emoji_id)
+    return result
 
 
 def semantic_custom_emojis(text: str, channel: str, available: dict[str, str], limit: int = 3) -> dict[str, str]:

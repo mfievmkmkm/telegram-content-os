@@ -1,4 +1,6 @@
-from content_os.premium_emoji import semantic_custom_emojis
+from types import SimpleNamespace
+
+from content_os.premium_emoji import custom_emoji_mapping, semantic_custom_emojis
 
 
 def test_semantic_custom_emoji_is_limited_and_channel_aware():
@@ -11,3 +13,15 @@ def test_semantic_custom_emoji_is_limited_and_channel_aware():
 
 def test_invalid_ids_are_ignored_without_breaking_fallback():
     assert semantic_custom_emojis("⚠️ Ошибка", "liga", {"⚠️": "broken"}) == {}
+
+
+def test_curated_pack_mapping_keeps_brand_symbols_and_first_style():
+    first = SimpleNamespace(stickers=[
+        SimpleNamespace(emoji="💎", custom_emoji_id="101"),
+        SimpleNamespace(emoji="😺", custom_emoji_id="102"),
+    ])
+    filler = SimpleNamespace(stickers=[
+        SimpleNamespace(emoji="💎", custom_emoji_id="999"),
+        SimpleNamespace(emoji="📉", custom_emoji_id="103"),
+    ])
+    assert custom_emoji_mapping((first, filler)) == {"💎": "101", "📉": "103"}
