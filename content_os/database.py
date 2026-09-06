@@ -128,7 +128,7 @@ class Database:
 
     def radar_posts(self, channel_key, limit=8):
         with self.connect() as db:
-            return db.execute("SELECT text FROM channel_posts WHERE channel_key=? AND source_role='radar' ORDER BY telegram_post_id DESC LIMIT ?",(channel_key,limit)).fetchall()
+            return db.execute("SELECT text,source_channel,posted_at FROM channel_posts WHERE channel_key=? AND source_role='radar' ORDER BY telegram_post_id DESC LIMIT ?",(channel_key,limit)).fetchall()
 
     def import_counts(self):
         with self.connect() as db:

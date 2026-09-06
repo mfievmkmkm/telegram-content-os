@@ -21,6 +21,7 @@ from .meme_engine import build_meme
 from .planner_v2 import ContentCandidate
 from .release_gate import evaluate_release
 from .system_health import subsystem_statuses
+from .growth.experiment_store import ExperimentStore
 
 PLAN_KEY = "v2:today:actions"
 HOME_CALLBACK = "v2:home"
@@ -28,11 +29,11 @@ HOME_CALLBACK = "v2:home"
 
 def operator_keyboard() -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="⚡ TODAY", callback_data="v2:today"), InlineKeyboardButton(text="✚ CREATE", callback_data="v2:create")],
-        [InlineKeyboardButton(text="📁 PROJECTS", callback_data="v2:projects"), InlineKeyboardButton(text="📅 CALENDAR", callback_data="panel:scheduled")],
-        [InlineKeyboardButton(text="🎬 STUDIO", callback_data="v2:studio"), InlineKeyboardButton(text="📊 GROWTH", callback_data="v2:growth")],
-        [InlineKeyboardButton(text="🛒 SALES", callback_data="v2:sales"), InlineKeyboardButton(text="🧠 KNOWLEDGE", callback_data="v2:knowledge")],
-        [InlineKeyboardButton(text="⚙️ SYSTEM", callback_data="v2:readiness")],
+        [InlineKeyboardButton(text="● TODAY", callback_data="v2:today"), InlineKeyboardButton(text="＋ CREATE", callback_data="v2:create")],
+        [InlineKeyboardButton(text="◫ PROJECTS", callback_data="v2:projects"), InlineKeyboardButton(text="◷ CALENDAR", callback_data="panel:scheduled")],
+        [InlineKeyboardButton(text="▶ STUDIO", callback_data="v2:studio"), InlineKeyboardButton(text="↗ GROWTH", callback_data="v2:growth")],
+        [InlineKeyboardButton(text="₽ SALES", callback_data="v2:sales"), InlineKeyboardButton(text="◆ KNOWLEDGE", callback_data="v2:knowledge")],
+        [InlineKeyboardButton(text="⚙ SYSTEM", callback_data="v2:readiness")],
     ]
     miniapp_url = os.getenv("MINIAPP_PUBLIC_URL", "").strip().rstrip("/")
     if miniapp_url.startswith("https://"):
@@ -281,6 +282,8 @@ def install(legacy):
                f"Причина: {rec.reason} Остальные особенности обычного материала сохрани. Не обещай рост результата и не придумывай факты.")
         try: draft_id=await legacy.editor.create_from_brief(project,"experiment",brief,f"A/B · {rec.dimension}")
         except Exception as exc: return await c.message.answer(f"❌ Эксперимент не создан: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+        ExperimentStore(legacy.db).create(project, f"{rec.dimension}={rec.value} улучшит {rec.metric}", rec.dimension,
+                                          "current baseline", rec.value, rec.metric, (draft_id,))
         await legacy.review(draft_id)
 
     @router.callback_query(F.data=="v2:growth:windows")

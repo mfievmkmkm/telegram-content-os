@@ -72,7 +72,7 @@ class SupabaseDatabase:
         return self.client.table("content_os_channel_posts").select("text").eq("channel_key",channel_key).eq("source_role","own").order("telegram_post_id",desc=True).limit(limit).execute().data
 
     def radar_posts(self,channel_key,limit=8):
-        return self.client.table("content_os_channel_posts").select("text").eq("channel_key",channel_key).eq("source_role","radar").order("telegram_post_id",desc=True).limit(limit).execute().data
+        return self.client.table("content_os_channel_posts").select("text,source_channel,posted_at").eq("channel_key",channel_key).eq("source_role","radar").order("telegram_post_id",desc=True).limit(limit).execute().data
 
     def import_counts(self):
         rows=self.client.table("content_os_channel_posts").select("source_channel,source_role").execute().data

@@ -41,4 +41,4 @@ def test_dashboard_snapshot_uses_shared_content_entities(tmp_path):
     snapshot = dashboard_snapshot(db)
     assert snapshot["counts"]["review"] == 1
     assert snapshot["drafts"][0]["id"] == draft_id
-    assert set(snapshot) >= {"drafts", "calendar", "analytics", "players", "orders"}
+    assert set(snapshot) >= {"drafts", "calendar", "analytics", "players", "orders", "experiments", "funnel", "challenges"}

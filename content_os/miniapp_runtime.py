@@ -10,6 +10,11 @@ from urllib.parse import parse_qsl
 
 from aiohttp import web
 
+from .challenge_progress import ChallengeProgress
+from .football_challenges import LIBRARY
+from .growth.experiment_store import ExperimentStore
+from .system_health import subsystem_statuses
+
 
 ASSETS = Path(__file__).with_name("miniapp")
 
@@ -46,6 +51,15 @@ def dashboard_snapshot(db) -> dict:
     orders = [_row(item) for item in db.service_orders("new", 20)] if hasattr(db, "service_orders") else []
     market = [_row(item) for item in db.radar_posts("gifts", 8)]
     knowledge = [_row(item) for item in db.course_stats(8)] if hasattr(db, "course_stats") else []
+    events = [_row(item) for item in db.funnel_events(5000)] if hasattr(db, "funnel_events") else []
+    event_counts = {}
+    revenue = 0.0
+    for item in events:
+        key = str(item.get("event_type") or "unknown")
+        event_counts[key] = event_counts.get(key, 0) + 1
+        revenue += float(item.get("revenue") or 0)
+    experiments = ExperimentStore(db).list()
+    challenge_records = ChallengeProgress(db).records()
     return {
         "generated_at": datetime.now(db.timezone).isoformat(),
         "counts": {
@@ -56,6 +70,12 @@ def dashboard_snapshot(db) -> dict:
         },
         "drafts": drafts[:20], "calendar": scheduled, "analytics": analytics,
         "players": players, "orders": orders, "market": market, "knowledge": knowledge,
+        "experiments": experiments,
+        "funnel": {"events": event_counts, "revenue": revenue},
+        "challenges": [{"key": item.key, "title": item.title, "position": item.position,
+                         "duration_min": item.duration_min, "task": item.task,
+                         "success_metric": item.success_metric, "proof": item.proof} for item in LIBRARY],
+        "challenge_progress": challenge_records,
     }
 
 
@@ -70,6 +90,9 @@ class MiniAppRuntime:
             web.post(r"/api/drafts/{draft_id:\d+}/publish", self.publish),
             web.post(r"/api/drafts/{draft_id:\d+}/schedule", self.schedule),
             web.post(r"/api/drafts/{draft_id:\d+}/delete", self.delete),
+            web.post(r"/api/challenges/{challenge_key}/draft", self.challenge_draft),
+            web.post(r"/api/challenges/{challenge_key}/complete", self.challenge_complete),
+            web.post(r"/api/experiments/{experiment_id}/sample", self.experiment_sample),
             web.get("/health", self.health),
         ])
         self.runner = None
@@ -101,7 +124,34 @@ class MiniAppRuntime:
         return web.json_response({"ok": True, "service": "content-os-miniapp"})
 
     async def dashboard(self, request):
-        return web.json_response(dashboard_snapshot(self.legacy.db))
+        result = dashboard_snapshot(self.legacy.db)
+        result["system"] = [{"key": item.key, "title": item.title, "ready": item.ready,
+                             "warning": item.warning, "missing": list(item.missing)} for item in subsystem_statuses(__import__("os").environ)]
+        return web.json_response(result)
+
+    async def challenge_draft(self, request):
+        key = request.match_info["challenge_key"]
+        challenge = next((item for item in LIBRARY if item.key == key), None)
+        if challenge is None: raise web.HTTPNotFound(text="Challenge not found")
+        text = (f"⚽ <b>{challenge.title}</b>\n\n{challenge.task}\n\n"
+                f"<b>Зачёт:</b> {challenge.success_metric}\n<b>Пруф:</b> {challenge.proof}\n\n"
+                "Сделай чисто. Скорость добавишь после качества")
+        draft_id = self.legacy.db.save_draft("liga", "challenge", text, 88, challenge.title)
+        return web.json_response({"ok": True, "draft_id": draft_id})
+
+    async def challenge_complete(self, request):
+        key = request.match_info["challenge_key"]
+        if not any(item.key == key for item in LIBRARY): raise web.HTTPNotFound(text="Challenge not found")
+        user = request["telegram_user"]
+        player = str(user.get("id") or user.get("username") or "admin")
+        return web.json_response({"ok": True, **ChallengeProgress(self.legacy.db).complete(player, key)})
+
+    async def experiment_sample(self, request):
+        body = await request.json()
+        try: row = ExperimentStore(self.legacy.db).add_sample(request.match_info["experiment_id"], str(body.get("variant")), float(body.get("score")))
+        except KeyError as exc: raise web.HTTPNotFound(text=str(exc)) from exc
+        except (TypeError, ValueError) as exc: raise web.HTTPBadRequest(text=str(exc)) from exc
+        return web.json_response({"ok": True, "experiment": row})
 
     async def approve(self, request):
         draft_id = int(request.match_info["draft_id"])

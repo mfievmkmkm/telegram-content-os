@@ -8,6 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from .football_challenges import Challenge, LIBRARY, daily_challenge
+from .challenge_progress import ChallengeProgress
 
 
 def _text(challenge: Challenge) -> str:
@@ -23,6 +24,7 @@ def _text(challenge: Challenge) -> str:
 def _keyboard(challenge: Challenge) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✚ В черновик Liga", callback_data=f"v2:challenge:draft:{challenge.key}")],
+        [InlineKeyboardButton(text="✓ Выполнил", callback_data=f"v2:challenge:complete:{challenge.key}")],
         [InlineKeyboardButton(text="🔄 Другой челлендж", callback_data=f"v2:challenge:next:{challenge.key}")],
         [InlineKeyboardButton(text="⌂ Главная", callback_data="v2:home")],
     ])
@@ -83,6 +85,16 @@ def install(legacy):
             return await c.answer(str(exc)[:160], show_alert=True)
         await c.answer("Черновик создан")
         await legacy.review(draft_id)
+
+    @router.callback_query(F.data.startswith("v2:challenge:complete:"))
+    async def complete(c: CallbackQuery):
+        if not legacy.admin(c): return
+        key = c.data.rsplit(":", 1)[-1]
+        if not any(item.key == key for item in LIBRARY):
+            return await c.answer("Челлендж не найден", show_alert=True)
+        player = str(c.from_user.id if c.from_user else "admin")
+        result = ChallengeProgress(legacy.db).complete(player, key)
+        await c.answer(f"Засчитано · серия {result['streak']} дн.", show_alert=True)
 
     legacy.dp.include_router(router)
     return router

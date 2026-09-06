@@ -34,6 +34,7 @@ from .shop_runtime import create_shop_runtime
 from .funnel import summarize_funnel
 from .brand_cards import gift_card, liga_card, use_gift_card, use_liga_card
 from .mtproto_publish import PremiumPublisher
+from .premium_emoji import semantic_custom_emojis
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -87,7 +88,7 @@ def render(channel_key,text):
     raw=db.get(f"premium_emojis:{channel_key}") or "{}"
     try: custom=json.loads(raw)
     except (TypeError,json.JSONDecodeError): custom={}
-    return telegram_html(text,custom)
+    return telegram_html(text,semantic_custom_emojis(text,channel_key,custom,3))
 
 async def premium_health():
     if not premium_publisher.ready: return "Bot API: переменные Premium-публикации не заполнены"
