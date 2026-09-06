@@ -16,8 +16,9 @@ SCENE_DIR=Path(__file__).with_name("assets")/"card_scenes"
 # Production pools deliberately contain only the new, art-directed 3D objects.
 # Legacy scenes stay on disk solely so old published drafts remain reproducible.
 SCENES=("3d_gift_vault.webp","3d_market_whale.webp","3d_gift_auction.webp","3d_fomo_cart.webp",
-        "3d_market_terminal.webp","3d_security_scanner.webp")
-LIGA_SCENES=("3d_boot_impact.webp","3d_keeper_catch.webp","3d_tactics_sculpture.webp","3d_reaction_gate.webp")
+        "3d_market_terminal.webp","3d_security_scanner.webp","3d_rarity_scanner.webp","3d_liquidity_reservoir.webp")
+LIGA_SCENES=("3d_boot_impact.webp","3d_keeper_catch.webp","3d_tactics_sculpture.webp","3d_reaction_gate.webp",
+             "3d_decision_lanes.webp","3d_pressure_chamber.webp")
 
 def font(size,bold=True): return ImageFont.truetype(FONT if bold else REGULAR,size)
 
@@ -45,6 +46,8 @@ def _wrap_pixels(draw,text,current_font,max_width):
 def _pick_liga_scene(text,seed):
     value=text.lower()
     if any(x in value for x in ("вратар", "голкипер", "сейв", "ворот", "лов")): return "3d_keeper_catch.webp"
+    if any(x in value for x in ("давлен", "прессинг", "сохрани", "корпус", "борьб", "единобор")): return "3d_pressure_chamber.webp"
+    if any(x in value for x in ("скан", "решен", "выбор", "перед приём", "до приёма", "передач")): return "3d_decision_lanes.webp"
     if any(x in value for x in ("тактич", "схем", "позици", "разбор", "эпизод", "зон")): return "3d_tactics_sculpture.webp"
     if any(x in value for x in ("трениров", "упражнен", "скорост", "рывок", "конус", "касани")): return "3d_reaction_gate.webp"
     if any(x in value for x in ("удар", "гол", "заверш", "бьёт", "бутс", "техник")): return "3d_boot_impact.webp"
@@ -53,7 +56,9 @@ def _pick_liga_scene(text,seed):
 def _pick_gift_scene(text,seed):
     value=text.lower()
     if any(x in value for x in ("фишинг", "скам", "мошенн", "поддель", "безопас", "провер")): return "3d_security_scanner.webp"
-    if any(x in value for x in ("редк", "уник", "коллекц", "хран")): return "3d_gift_vault.webp"
+    if any(x in value for x in ("редк", "уник", "атрибут", "модел", "фон", "паттерн")): return "3d_rarity_scanner.webp"
+    if any(x in value for x in ("ликвид", "спрос", "продать", "листинг", "оборот")): return "3d_liquidity_reservoir.webp"
+    if any(x in value for x in ("коллекц", "хран", "сейф")): return "3d_gift_vault.webp"
     if any(x in value for x in ("кит", "холдер", "разгруз", "вышел", "объём")): return "3d_market_whale.webp"
     if any(x in value for x in ("аукцион", "торг", "ставк", "покупател")): return "3d_gift_auction.webp"
     if any(x in value for x in ("fomo", "пик", "корзин", "скуп", "набрал")): return "3d_fomo_cart.webp"

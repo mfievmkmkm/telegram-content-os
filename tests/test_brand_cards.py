@@ -47,6 +47,8 @@ def test_generated_3d_scene_library_is_available():
         "3d_fomo_cart.webp", "3d_boot_impact.webp", "3d_keeper_catch.webp",
         "3d_market_terminal.webp", "3d_security_scanner.webp",
         "3d_tactics_sculpture.webp", "3d_reaction_gate.webp",
+        "3d_rarity_scanner.webp", "3d_liquidity_reservoir.webp",
+        "3d_decision_lanes.webp", "3d_pressure_chamber.webp",
     }
     assert expected <= set(SCENES) | set(LIGA_SCENES)
     for name in expected:
@@ -56,6 +58,13 @@ def test_generated_3d_scene_library_is_available():
 def test_production_scene_pools_are_3d_only():
     assert SCENES and LIGA_SCENES
     assert all(name.startswith("3d_") for name in (*SCENES, *LIGA_SCENES))
+
+def test_new_3d_objects_are_selected_by_meaning():
+    from content_os.brand_cards import _pick_gift_scene
+    assert _pick_gift_scene("Редкая модель и уникальный атрибут", 1) == "3d_rarity_scanner.webp"
+    assert _pick_gift_scene("Ликвидность и реальный спрос важнее красоты", 1) == "3d_liquidity_reservoir.webp"
+    assert _pick_liga_scene("Сканирование поля до приёма и выбор передачи", 1) == "3d_decision_lanes.webp"
+    assert _pick_liga_scene("Как сохранить мяч под давлением и прессингом", 1) == "3d_pressure_chamber.webp"
 
 def test_meme_cards_use_distinct_editorial_layouts():
     gift=gift_card("Когда купил вершину и назвал это стратегией","мем")
