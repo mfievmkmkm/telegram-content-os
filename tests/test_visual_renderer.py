@@ -29,12 +29,12 @@ def test_visual_library_has_eight_real_art_directions():
     cards = [render_card("gifts", text, "разбор_ошибки", index) for index in range(8)]
     assert len(set(cards)) == 8
     assert [layout_key(index) for index in range(8)] == [
-        "cinematic", "photo_split", "number_poster", "dashboard",
-        "chat_meme", "dossier", "editorial", "spotlight",
+        "cinematic", "photo_split", "number_poster", "cinematic_alt",
+        "photo_split_alt", "number_poster_alt", "cinematic_bold", "photo_split_bold",
     ]
 
 
 def test_visual_director_opens_a_fresh_page():
     assert fresh_page_offset([]) == 0
     assert fresh_page_offset(["cinematic", "photo_split", "number_poster"]) == 3
-    assert fresh_page_offset(["dashboard", "chat_meme", "dossier"]) in {0, 6}
+    assert fresh_page_offset(["cinematic_alt", "photo_split_alt", "number_poster_alt"]) in {0, 6}

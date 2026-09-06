@@ -24,7 +24,7 @@ def _keyboard(challenge: Challenge) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✚ В черновик Liga", callback_data=f"v2:challenge:draft:{challenge.key}")],
         [InlineKeyboardButton(text="🔄 Другой челлендж", callback_data=f"v2:challenge:next:{challenge.key}")],
-        [InlineKeyboardButton(text="🏠 Home", callback_data="panel:home")],
+        [InlineKeyboardButton(text="⌂ Главная", callback_data="v2:home")],
     ])
 
 

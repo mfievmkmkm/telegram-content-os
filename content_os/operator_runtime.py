@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from aiogram import F, Router
 from aiogram.enums import ParseMode
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from .autopilot_v2 import AutopilotAction, build_autopilot_plan
 from .channels import CHANNELS
@@ -23,24 +23,29 @@ from .release_gate import evaluate_release
 from .system_health import subsystem_statuses
 
 PLAN_KEY = "v2:today:actions"
+HOME_CALLBACK = "v2:home"
 
 
 def operator_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [InlineKeyboardButton(text="⚡ TODAY", callback_data="v2:today"), InlineKeyboardButton(text="✚ CREATE", callback_data="v2:create")],
         [InlineKeyboardButton(text="📁 PROJECTS", callback_data="v2:projects"), InlineKeyboardButton(text="📅 CALENDAR", callback_data="panel:scheduled")],
         [InlineKeyboardButton(text="🎬 STUDIO", callback_data="v2:studio"), InlineKeyboardButton(text="📊 GROWTH", callback_data="v2:growth")],
         [InlineKeyboardButton(text="🛒 SALES", callback_data="v2:sales"), InlineKeyboardButton(text="🧠 KNOWLEDGE", callback_data="v2:knowledge")],
         [InlineKeyboardButton(text="⚙️ SYSTEM", callback_data="v2:readiness")],
-    ])
+    ]
+    miniapp_url = os.getenv("MINIAPP_PUBLIC_URL", "").strip().rstrip("/")
+    if miniapp_url.startswith("https://"):
+        rows.insert(0, [InlineKeyboardButton(text="✦ ОТКРЫТЬ CONTENT OS", web_app=WebAppInfo(url=miniapp_url))])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def home_nav() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⌂ На главную", callback_data="panel:home")]])
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⌂ На главную", callback_data=HOME_CALLBACK)]])
 
 
-def section_nav(back: str = "panel:home") -> list[list[InlineKeyboardButton]]:
-    return [[InlineKeyboardButton(text="‹ Назад", callback_data=back), InlineKeyboardButton(text="⌂ Главная", callback_data="panel:home")]]
+def section_nav(back: str = HOME_CALLBACK) -> list[list[InlineKeyboardButton]]:
+    return [[InlineKeyboardButton(text="‹ Назад", callback_data=back), InlineKeyboardButton(text="⌂ Главная", callback_data=HOME_CALLBACK)]]
 
 
 def _value(row, key, default=""):
@@ -142,6 +147,17 @@ async def _create_action(legacy,action:dict) -> int:
 
 def install(legacy):
     router=Router(name="content-os-cockpit-v2"); legacy.main_keyboard=operator_keyboard
+
+    @router.callback_query(F.data == HOME_CALLBACK)
+    async def home(c: CallbackQuery):
+        if not legacy.admin(c): return
+        await c.answer()
+        await c.message.edit_text(
+            "<b>CONTENT OS</b>\n<i>Редакторская система · один экран для решений</i>\n\n"
+            "Что требует внимания прямо сейчас?",
+            parse_mode=ParseMode.HTML,
+            reply_markup=operator_keyboard(),
+        )
 
     @router.callback_query(F.data.in_({"v2:today","v2:today:refresh"}))
     async def today(c:CallbackQuery):

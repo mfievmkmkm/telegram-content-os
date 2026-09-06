@@ -5,8 +5,10 @@ import os
 
 
 def runtime_name() -> str:
-    value = (os.getenv("CONTENT_OS_RUNTIME") or "legacy").strip().lower()
-    return "v2" if value in {"v2", "2", "next", "content-os-v2"} else "legacy"
+    # V2 is the production product. Legacy remains an explicit rollback switch,
+    # never an accidental default that silently restores the old navigation.
+    value = (os.getenv("CONTENT_OS_RUNTIME") or "v2").strip().lower()
+    return "legacy" if value in {"legacy", "v1", "1", "rollback"} else "v2"
 
 
 async def main():

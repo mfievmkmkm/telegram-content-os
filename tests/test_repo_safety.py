@@ -10,9 +10,10 @@ def test_legacy_runtime_was_not_replaced_by_v2_migration():
     assert "async def publish(" in text
 
 
-def test_root_entrypoint_is_fail_safe_legacy_by_default():
+def test_root_entrypoint_keeps_explicit_legacy_rollback():
     text = Path("content_os/entrypoint.py").read_text("utf-8")
-    assert 'or "legacy"' in text
+    assert 'or "v2"' in text
+    assert '"legacy"' in text
     assert 'if runtime_name() == "v2"' in text
     docker = Path("Dockerfile").read_text("utf-8")
     assert "content_os.entrypoint" in docker

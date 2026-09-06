@@ -16,7 +16,7 @@ def studio_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Пост", callback_data="panel:generate"), InlineKeyboardButton(text="Shorts", callback_data="v2:shorts")],
         [InlineKeyboardButton(text="Карточки", callback_data="v2:cards"), InlineKeyboardButton(text="Мемы", callback_data="v2:memes")],
         [InlineKeyboardButton(text="Remix", callback_data="v2:remix")],
-        [InlineKeyboardButton(text="‹ Назад", callback_data="panel:home")],
+        [InlineKeyboardButton(text="‹ Назад", callback_data="v2:home")],
     ])
 
 
@@ -25,7 +25,7 @@ def projects_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🎁 Gifts Intelligence", callback_data="v2:project:gifts")],
         [InlineKeyboardButton(text="⚽ Liga Progress", callback_data="v2:project:liga")],
         [InlineKeyboardButton(text="⚡ AI Content Lab", callback_data="v2:project:lab")],
-        [InlineKeyboardButton(text="‹ Назад", callback_data="panel:home")],
+        [InlineKeyboardButton(text="‹ Назад", callback_data="v2:home")],
     ])
 
 
