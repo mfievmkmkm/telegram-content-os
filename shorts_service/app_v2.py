@@ -233,8 +233,8 @@ async def render(task_id: str, payload: dict):
     try:
         script = clean_script(payload.get("video_script") or payload.get("voiceover") or payload.get("video_subject") or "")
         words = script.split()
-        if not 20 <= len(words) <= 70:
-            raise RuntimeError(f"Сценарий должен содержать 20–70 слов, сейчас {len(words)}")
+        if not 20 <= len(words) <= 105:
+            raise RuntimeError(f"Сценарий должен содержать 20–105 слов, сейчас {len(words)}")
         tail = words[-1].strip(".,!?—–:;") if words else ""
         if len(tail) == 1 and tail.isalpha():
             raise RuntimeError("Сценарий оборван на последнем слове")

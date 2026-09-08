@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 try:
-    from .core import alignment_chunks, caption_chunks
+    from .core import alignment_chunks, caption_chunks, clean_script
 except ImportError:
-    from core import alignment_chunks, caption_chunks
+    from core import alignment_chunks, caption_chunks, clean_script
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +35,10 @@ def ass_subtitles_v2(script: str, duration: float, preset: str = "punch", alignm
     style = subtitle_style(preset)
     timed = alignment_chunks(alignment or {}, max_words=style.max_words)
     chunks = caption_chunks(script, max_words=style.max_words)
+    # Some TTS responses contain a partial alignment even though the MP3 is
+    # complete. Never let that silently remove the rest of the subtitles.
+    if timed and sum(len(item[0].split()) for item in timed) < len(clean_script(script).split()) * .95:
+        timed = []
     total = sum(len(x.split()) for x in chunks)
     cursor = 0.0
     lines = []

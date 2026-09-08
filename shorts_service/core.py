@@ -60,6 +60,7 @@ def alignment_chunks(alignment:dict,max_words:int=2)->list[tuple[str,float,float
 def ass_subtitles(script:str,duration:float,alignment:dict|None=None)->str:
     timed=alignment_chunks(alignment or {})
     chunks=caption_chunks(script); total=sum(len(x.split()) for x in chunks); cursor=0.0; lines=[]
+    if timed and sum(len(item[0].split()) for item in timed) < len(clean_script(script).split())*.95: timed=[]
     def stamp(seconds):
         hours=int(seconds//3600); minutes=int(seconds%3600//60); rest=seconds%60
         return f"{hours}:{minutes:02d}:{rest:05.2f}"

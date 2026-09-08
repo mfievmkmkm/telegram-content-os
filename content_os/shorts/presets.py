@@ -8,7 +8,7 @@ class DeliveryPreset:
     key: str
     title: str
     instruction: str
-    target_words: tuple[int, int] = (48, 62)
+    target_words: tuple[int, int] = (74, 96)
 
 
 @dataclass(frozen=True, slots=True)

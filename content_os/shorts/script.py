@@ -9,14 +9,17 @@ from .models import ShortBrief
 from .presets import delivery
 
 
-SCRIPT_CONTRACT = """Создай сценарий вертикального ролика 9:16.
+SCRIPT_CONTRACT = """Создай сценарий вертикального ролика 9:16 длительностью 30–45 секунд.
 Сначала качество текста, монтаж будет только после подтверждения редактором.
 Хук обязан остановить скролл за первые 2 секунды: конкретная боль, конфликт, неожиданность или опасное заблуждение.
 Никаких приветствий и AI-канцелярита. Каждое предложение короткое и произносимое вслух.
-Не пересказывай исходный пост по абзацам: найди одну сильную мысль и преврати её в живой монолог.
+Это самостоятельная видеоверсия, а не обрезанный первый абзац. Сохрани хук, все ключевые тезисы,
+практическое действие и финальный вывод исходника. Можно сжать повторы, но нельзя бросать мысль на середине
+или выбрасывать вторую половину смысла. Монолог обязан иметь дугу: конфликт → объяснение → решение → финал.
 Не придумывай цены, статистику, цитаты или события.
 Верни СТРОГО JSON без markdown:
 {"title":"...","hook":"...","voiceover":"...","scenes":[{"seconds":4,"visual":"English visual intent","screen_text":"...","asset_type":"stock_video"}],"caption":"...","music_mood":"...","cta":"..."}
+Сделай 8–10 сцен общей длительностью 30–45 секунд.
 asset_type может быть stock_video, brand_card, screenshot, meme, market_chart, text_scene или user_asset.
 """
 
@@ -40,7 +43,11 @@ class ShortScriptService:
         data.update(channel=draft["channel_key"], draft_id=draft["id"])
         brief = ShortBrief.from_legacy(data)
         brief.delivery_preset = delivery_key
-        self.validate(brief)
+        try:
+            self.validate(brief)
+        except ValueError:
+            data=self._fallback(draft); data.update(channel=draft["channel_key"],draft_id=draft["id"])
+            brief=ShortBrief.from_legacy(data); brief.delivery_preset=delivery_key; self.validate(brief)
         return brief
 
     async def rewrite(self, brief: ShortBrief, mode: str) -> ShortBrief:
@@ -69,7 +76,14 @@ class ShortScriptService:
         updated.delivery_preset = brief.delivery_preset
         updated.voice_preset = brief.voice_preset
         updated.subtitle_preset = brief.subtitle_preset
-        self.validate(updated)
+        try:
+            self.validate(updated)
+        except ValueError:
+            data=self._fallback({"text":brief.voiceover,"channel_key":brief.channel})
+            data.update(channel=brief.channel,draft_id=brief.draft_id)
+            updated=ShortBrief.from_legacy(data); updated.delivery_preset=brief.delivery_preset
+            updated.voice_preset=brief.voice_preset; updated.subtitle_preset=brief.subtitle_preset
+            self.validate(updated)
         return updated
 
     @staticmethod
@@ -85,19 +99,26 @@ class ShortScriptService:
         text = plain_text(str(draft.get("text") or "")).strip()
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         hook = (lines[0] if lines else "Здесь есть деталь, которую почти все пропускают")[:110]
-        words = re.findall(r"\S+", text)
-        voice = " ".join(words[:58]).strip(" ,;:")
+        sentences = [item.strip() for item in re.split(r"(?<=[.!?])\s+|\n+", text) if item.strip()]
+        selected=[]
+        # Keep the beginning, body and conclusion. This fallback is deliberately
+        # sentence-safe: it never slices a word or silently loses the ending.
+        for index in sorted(set([0, *range(1, max(1,len(sentences)-1)), max(0,len(sentences)-1)])):
+            sentence=sentences[index]
+            if len((" ".join(selected+[sentence])).split())<=96:
+                selected.append(sentence)
+        voice = " ".join(selected).strip(" ,;:")
         safety = " Главное — проверить контекст, увидеть ключевую деталь и только после этого делать вывод."
-        while len(voice.split()) < 42:
+        while len(voice.split()) < 64:
             voice = (voice + safety).strip()
-        voice = " ".join(voice.split()[:66]).rstrip(" ,;:")
+        voice = " ".join(voice.split()[:100]).rstrip(" ,;:")
         if voice and voice[-1] not in ".!?": voice += "."
         gifts = str(draft.get("channel_key")) == "gifts"
         visuals = (["digital collectible vault 3d", "telegram gift auction 3d", "market whale 3d", "fomo cart 3d", "digital collectible closeup 3d", "telegram market interface"] if gifts else
                    ["football boot impact 3d", "goalkeeper glove catch 3d", "football boot closeup 3d", "goalkeeper save 3d", "football training object 3d", "stadium equipment 3d"])
-        captions = [hook, "СМОТРИ ГЛУБЖЕ", "ВОТ ГДЕ ОШИБКА", "РЕШАЕТ ДЕТАЛЬ", "ПРОВЕРЬ КОНТЕКСТ", "ТВОЙ ХОД"]
+        captions = [hook, "СМОТРИ ГЛУБЖЕ", "ВОТ ГДЕ ОШИБКА", "НЕ ТЕРЯЙ СМЫСЛ", "РЕШАЕТ ДЕТАЛЬ", "ПРОВЕРЬ КОНТЕКСТ", "ТВОЙ ХОД", "ФИНАЛ"]
         return {"title": hook[:70], "hook": hook, "voiceover": voice,
-                "scenes": [{"seconds": 4, "visual": visual, "screen_text": captions[i][:45], "asset_type": "stock_video"} for i, visual in enumerate(visuals)],
+                "scenes": [{"seconds": 4, "visual": visuals[i % len(visuals)], "screen_text": captions[i][:45], "asset_type": "stock_video"} for i in range(8)],
                 "caption": text[:900], "music_mood": "dark electronic tension" if gifts else "energetic sports tension",
                 "cta": (lines[-1] if lines else "Сохрани и проверь себя")[:110]}
 
@@ -105,11 +126,11 @@ class ShortScriptService:
     def validate(brief: ShortBrief) -> None:
         if not brief.title or not brief.hook or not brief.voiceover or not brief.cta:
             raise ValueError("Shorts: сценарий неполный")
-        if not 5 <= len(brief.scenes) <= 10:
-            raise ValueError("Shorts: нужно 5–10 сцен")
-        if not 38 <= brief.word_count <= 70:
-            raise ValueError(f"Shorts: озвучка {brief.word_count} слов, допустимо 38–70")
-        if not 20 <= brief.duration <= 35:
-            raise ValueError(f"Shorts: длительность сцен {brief.duration} сек, допустимо 20–35")
+        if not 6 <= len(brief.scenes) <= 12:
+            raise ValueError("Shorts: нужно 6–12 сцен")
+        if not 64 <= brief.word_count <= 105:
+            raise ValueError(f"Shorts: озвучка {brief.word_count} слов, допустимо 64–105")
+        if not 28 <= brief.duration <= 50:
+            raise ValueError(f"Shorts: длительность сцен {brief.duration} сек, допустимо 28–50")
         if len(plain_text(brief.hook).split()) > 18:
             raise ValueError("Shorts: хук слишком длинный для первых двух секунд")

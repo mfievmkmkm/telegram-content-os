@@ -5,7 +5,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, Message
+from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, MenuButtonWebApp, Message, WebAppInfo
 
 from .campaigns import parse_campaign
 from .sales import DiagnosticInput, recommend
@@ -25,7 +25,11 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         try: db.save_funnel_event(user_id,event_type,source,offer_key)
         except Exception: pass
 
-    def home_keyboard(): return storefront(settings.gifts_subscription_bot_username)
+    def home_keyboard():
+        keyboard=storefront(settings.gifts_subscription_bot_username)
+        if settings.miniapp_public_url:
+            keyboard.inline_keyboard.insert(0,[InlineKeyboardButton(text="✦ Открыть магазин",web_app=WebAppInfo(url=f"{settings.miniapp_public_url}/shop"))])
+        return keyboard
 
     HOME=("<b>CONTENT OS LAB</b>\n\n"
           "Не выбирай технологию. Выбери, что должно измениться.\n\n"
@@ -198,7 +202,9 @@ def create_shop_runtime(settings,db,editor,admin_bot):
             BotCommand(command="start",description="подобрать решение"),
             BotCommand(command="shop",description="витрина решений"),
         ])
-        await shop_bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        menu=(MenuButtonWebApp(text="Магазин",web_app=WebAppInfo(url=f"{settings.miniapp_public_url}/shop"))
+              if settings.miniapp_public_url else MenuButtonCommands())
+        await shop_bot.set_chat_menu_button(menu_button=menu)
 
     dp.startup.register(setup_commands)
     return shop_bot,dp

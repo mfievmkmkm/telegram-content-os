@@ -22,6 +22,7 @@ from .planner_v2 import ContentCandidate
 from .release_gate import evaluate_release
 from .system_health import SubsystemStatus, subsystem_statuses
 from .growth.experiment_store import ExperimentStore
+from .topic_rotation import TopicRotation, topical_similarity
 
 PLAN_KEY = "v2:today:actions"
 HOME_CALLBACK = "v2:home"
@@ -63,17 +64,20 @@ def _recent_candidates(db) -> list[ContentCandidate]:
     """Turn observed radar material into ideas, never unsupported market facts."""
     result=[]
     for project in ("gifts","liga"):
+        recent=TopicRotation(db).recent(project,18)
         try: rows=list(db.radar_posts(project,10))
         except Exception: rows=[]
         for index,row in enumerate(rows[:6]):
             topic=_first_line(_value(row,"text"))
             if not topic: continue
+            if max((topical_similarity(topic,item) for item in recent),default=0)>=.52: continue
             result.append(ContentCandidate(
                 project=project,kind=("shorts","post","meme")[index%3],topic=topic,
                 source=str(_value(row,"source_channel","telegram-radar")),freshness=max(.62,.94-index*.05),
                 relevance=.82,novelty=max(.60,.86-index*.04),evidence=.58 if project=="gifts" else .68,
                 sales_value=.55 if project=="gifts" else .30,urgency=.65 if index<2 else .35,fact_sensitive=project=="gifts"))
-        for index,topic in enumerate((CHANNELS[project].get("topics") or [])[:5]):
+        for index,choice in enumerate(TopicRotation(db).choices(project,8)):
+            topic=f"{choice.lane}: {choice.seed}"
             kinds=("post","meme","challenge" if project=="liga" else "shorts")
             result.append(ContentCandidate(project=project,kind=kinds[index%3],topic=str(topic),source="content-dna",
                 freshness=.55,relevance=.76,novelty=.72,evidence=.78,sales_value=.28,urgency=.20))

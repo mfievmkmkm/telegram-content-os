@@ -8,10 +8,12 @@ import aiohttp
 from .channels import CHANNELS
 from .formatting import plain_text
 
-SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 22–30 секунд.
+SHORTS_RULES = """Создай производственное задание для вертикального ролика 9:16 на 30–45 секунд.
 Первая фраза должна остановить скролл за 2 секунды: боль, конфликт, абсурд или опасное заблуждение.
-Никаких приветствий. Озвучка — 48–62 слова, разговорный русский, короткими фразами без канцелярита.
-Это не пересказ поста: перепиши мысль как живой монолог. Каждые 1.5–2.2 секунды новый визуальный удар.
+Никаких приветствий. Озвучка — 74–96 слов, разговорный русский, короткими фразами без канцелярита.
+Это законченная видеоверсия: сохрани хук, ключевые тезисы, действие и финальный вывод исходника.
+Сжимай повторы, но не выбрасывай вторую половину смысла. Дуга: конфликт → объяснение → решение → финал.
+Каждые 2–4 секунды новый визуальный удар.
 Крупный экранный текст — максимум 4 слова. Заверши коротким вопросом или действием без точки.
 Каждое предложение — 4–10 слов, максимум одна запятая. Запрещены литературные метафоры,
 повторы одной мысли и псевдодрама вроде «земля уходит из-под ног», «ты уже проиграл» или
@@ -48,7 +50,7 @@ class VideoFactory:
             try:
                 repaired=await self.editor.llm(
                     "Ты JSON-валидатор. Заполни ВСЕ обязательные поля title, hook, voiceover, scenes, caption, music_mood, cta. "
-                    "scenes — массив из 5–10 объектов seconds, visual, screen_text. Верни только JSON без markdown.",
+                    "scenes — массив из 6–12 объектов seconds, visual, screen_text. Верни только JSON без markdown.",
                     f"{SHORTS_RULES}\n\nИСХОДНЫЙ ОТВЕТ:\n{raw}\n\nПОСТ:\n{draft['text']}",
                     .1,
                 )
@@ -173,13 +175,13 @@ class VideoFactory:
         required={"title","hook","voiceover","scenes","caption","music_mood","cta"}
         missing=required-set(data)
         if missing: raise ValueError(f"Shorts JSON: нет полей {', '.join(sorted(missing))}")
-        if not isinstance(data["scenes"],list) or not 5<=len(data["scenes"])<=10: raise ValueError("Shorts должен содержать 5–10 сцен")
+        if not isinstance(data["scenes"],list) or not 6<=len(data["scenes"])<=12: raise ValueError("Shorts должен содержать 6–12 сцен")
         voice=plain_text(str(data.get("voiceover") or "")).strip(); words=voice.split()
         tail=words[-1].strip(".,!?—–:;") if words else ""
-        if not 42<=len(words)<=70: raise ValueError(f"Озвучка должна содержать 42–70 слов, сейчас {len(words)}")
+        if not 64<=len(words)<=105: raise ValueError(f"Озвучка должна содержать 64–105 слов, сейчас {len(words)}")
         if len(tail)==1 and tail.isalpha(): raise ValueError("Озвучка оборвана на последнем слове")
         duration=sum(int(scene.get("seconds",0)) for scene in data["scenes"])
-        if not 22<=duration<=34: raise ValueError(f"Некорректная длительность: {duration} сек")
+        if not 28<=duration<=50: raise ValueError(f"Некорректная длительность: {duration} сек")
 
     @staticmethod
     def fallback(draft):
@@ -187,22 +189,27 @@ class VideoFactory:
         text=plain_text(draft.get("text","")).strip()
         lines=[line.strip() for line in text.splitlines() if line.strip()]
         hook=(lines[0] if lines else "Остановись: здесь есть деталь, которую все пропускают")[:120]
-        sentences=re.split(r"(?<=[.!?])\s+",text); selected=[]
+        sentences=[item.strip() for item in re.split(r"(?<=[.!?])\s+|\n+",text) if item.strip()]; selected=[]
         for sentence in sentences:
-            if len((" ".join(selected+[sentence])).split())>62: break
-            selected.append(sentence)
+            if len((" ".join(selected+[sentence])).split())<=96: selected.append(sentence)
+        if sentences and sentences[-1] not in selected:
+            while selected and len((" ".join(selected+[sentences[-1]])).split())>96: selected.pop()
+            selected.append(sentences[-1])
         voiceover=" ".join(selected).strip()
-        if len(voiceover.split())>62: voiceover=" ".join(voiceover.split()[:62]).rstrip(" ,;:")+"."
-        if len(voiceover.split())<35:
-            voiceover=(voiceover+" Главное — не верить первому впечатлению. Посмотри на причину, проверь факты и только потом делай вывод.").strip()
-        if len(voiceover.split())<42:
-            voiceover=(voiceover+" Один быстрый чек сейчас дешевле, чем попытка оправдать ошибку потом. Проверь ещё раз.").strip()
+        if len(voiceover.split())>100: voiceover=" ".join(voiceover.split()[:100]).rstrip(" ,;:")+"."
+        fillers=(" Главное — не верить первому впечатлению. Посмотри на причину, проверь факты и только потом делай вывод.",
+                 " Один быстрый чек сейчас дешевле, чем попытка оправдать ошибку потом. Проверь ещё раз.")
+        index=0
+        while len(voiceover.split())<64:
+            voiceover=(voiceover+fillers[index%len(fillers)]).strip(); index+=1
+        voiceover=" ".join(voiceover.split()[:105]).rstrip(" ,;:")
+        if voiceover and voiceover[-1] not in ".!?": voiceover+="."
         if draft.get("channel_key")=="gifts":
             visuals=["telegram gift dark neon","digital collectible close up","crypto market chart dark","phone marketplace scrolling","ton coin animation","collector decision concept","dark neon question mark"]
             mood="dark electronic tension"
         else:
             visuals=["football player training alone","football boots close up","soccer tactical board","player sprint training","empty stadium tunnel","coach observing practice","football field sunset"]
             mood="energetic sports tension"
-        scenes=[{"seconds":4,"visual":visual,"screen_text":([hook,"Смотри глубже","Вот где ошибка","Решает деталь","Без оправданий","Проверь себя","А ты согласен?"][i])[:45]} for i,visual in enumerate(visuals)]
+        scenes=[{"seconds":4,"visual":visuals[i%len(visuals)],"screen_text":([hook,"Смотри глубже","Вот где ошибка","Не теряй смысл","Решает деталь","Без оправданий","Проверь себя","Твой вывод"][i])[:45]} for i in range(8)]
         return {"title":hook[:70],"hook":hook,"voiceover":voiceover,"scenes":scenes,
                 "caption":text[:900],"music_mood":mood,"cta":lines[-1][:120] if lines else "А ты согласен?"}

@@ -14,8 +14,8 @@ def sample_brief():
     return ShortBrief(
         title="Ошибка оценки",
         hook="Ты смотришь не туда",
-        voiceover=" ".join(["слово"] * 48),
-        scenes=[ShortScene(4, f"scene {i}") for i in range(6)],
+        voiceover=" ".join(["слово"] * 80),
+        scenes=[ShortScene(4, f"scene {i}") for i in range(8)],
         caption="caption",
         music_mood="tension",
         cta="Проверь ещё раз",

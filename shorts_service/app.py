@@ -166,7 +166,7 @@ async def render(task_id:str,payload:dict):
         words=script.split()
         # Never cut a voiceover in the middle of a sentence. The editor must send a
         # complete short script; otherwise reject it before wasting stock footage.
-        if len(words)>70: raise RuntimeError("Сценарий длиннее 70 слов — сократи его целиком, без обрыва финала")
+        if len(words)>105: raise RuntimeError("Сценарий длиннее 105 слов — сократи его целиком, без обрыва финала")
         tail=words[-1].strip(".,!?—–:;") if words else ""
         if len(tail)==1 and tail.isalpha(): raise RuntimeError("Сценарий оборван на последнем слове")
         script=re.sub(r"\s+([,.!?])",r"\1",script)

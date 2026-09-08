@@ -6,9 +6,12 @@ from content_os.video import VideoFactory
 
 
 def valid_payload():
-    voiceover="Ты видишь красивую карточку и сразу думаешь о прибыли. Но картинка ничего не говорит о спросе. Открой историю сделок, проверь частоту продаж и сравни реальные предложения. Только после этого решай, есть перед тобой актив или просто дорогая картинка. А ты проверяешь рынок до покупки?"
+    voiceover=("Ты видишь красивую карточку и сразу думаешь о прибыли. Но картинка ничего не говорит о спросе. "
+               "Открой историю сделок, проверь частоту продаж и сравни реальные предложения. Посмотри, как долго висят похожие модели. "
+               "Отдели редкость от ликвидности и не принимай один удачный скриншот за весь рынок. Проверь комиссии, спред и контрагента. "
+               "Только после этого решай, есть перед тобой актив или просто дорогая картинка. А ты проверяешь рынок до покупки?")
     return {"title":"t","hook":"h","voiceover":voiceover,"caption":"c","music_mood":"m","cta":"x",
-            "scenes":[{"seconds":6,"visual":"pitch","screen_text":"Стоп"} for _ in range(5)]}
+            "scenes":[{"seconds":4,"visual":"pitch","screen_text":"Стоп"} for _ in range(8)]}
 
 
 def test_video_payload_is_valid():
@@ -62,5 +65,5 @@ def test_missing_json_fields_fall_back_to_complete_brief():
     job,data,_,_=asyncio.run(factory.create({"id":3,"channel_key":"liga","text":"<b>Ты проиграл эпизод ещё до приёма мяча.</b>\n\nСканируй поле до передачи.\n\nА ты смотришь через плечо?"}))
     assert job==7
     VideoFactory.validate(data)
-    assert len(data["scenes"])==7
+    assert len(data["scenes"])==8
     assert data["hook"].startswith("Ты проиграл")

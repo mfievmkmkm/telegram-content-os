@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import html
 import time
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ from .challenge_progress import ChallengeProgress
 from .football_challenges import LIBRARY
 from .growth.experiment_store import ExperimentStore
 from .system_health import subsystem_statuses
+from .sales.catalog import PACKAGES
 
 
 ASSETS = Path(__file__).with_name("miniapp")
@@ -79,12 +81,26 @@ def dashboard_snapshot(db) -> dict:
     }
 
 
+def shop_snapshot() -> dict:
+    order = {"free": 0, "entry": 1, "core": 2, "system": 3, "recurring": 4}
+    packages=[]
+    for item in sorted(PACKAGES.values(), key=lambda value: (order.get(value.tier, 9), value.price_label)):
+        packages.append({
+            "key": item.key, "vertical": item.vertical, "tier": item.tier, "title": item.title,
+            "promise": item.promise, "deliverables": list(item.deliverables),
+            "price": item.price_label, "turnaround": item.turnaround, "recurring": item.recurring,
+        })
+    return {"packages": packages, "verticals": ["all", "football", "ai", "gifts"]}
+
+
 class MiniAppRuntime:
     def __init__(self, legacy):
         self.legacy = legacy
         self.app = web.Application(middlewares=[self.auth])
         self.app.add_routes([
             web.get("/", self.index), web.get("/app.css", self.css), web.get("/app.js", self.js),
+            web.get("/shop", self.shop_index), web.get("/shop.css", self.shop_css), web.get("/shop.js", self.shop_js),
+            web.get("/api/shop/catalog", self.shop_catalog), web.post("/api/shop/orders", self.shop_order),
             web.get("/api/dashboard", self.dashboard),
             web.post(r"/api/drafts/{draft_id:\d+}/approve", self.approve),
             web.post(r"/api/drafts/{draft_id:\d+}/publish", self.publish),
@@ -101,10 +117,16 @@ class MiniAppRuntime:
     async def auth(self, request, handler):
         if not request.path.startswith("/api/"):
             return await handler(request)
+        token=self.legacy.settings.bot_token
+        if request.path.startswith("/api/shop/"):
+            token=self.legacy.settings.shop_bot_token or token
         try:
-            user = validate_init_data(request.headers.get("X-Telegram-Init-Data", ""), self.legacy.settings.bot_token)
+            user = validate_init_data(request.headers.get("X-Telegram-Init-Data", ""), token)
         except ValueError as exc:
             raise web.HTTPUnauthorized(text=str(exc)) from exc
+        if request.path.startswith("/api/shop/"):
+            request["telegram_user"] = user
+            return await handler(request)
         username = str(user.get("username") or "").lower()
         if username not in self.legacy.settings.admins:
             raise web.HTTPForbidden(text="Admin access required")
@@ -119,6 +141,41 @@ class MiniAppRuntime:
 
     async def js(self, request):
         return web.FileResponse(ASSETS / "app.js")
+
+    async def shop_index(self, request):
+        return web.FileResponse(ASSETS / "shop.html")
+
+    async def shop_css(self, request):
+        return web.FileResponse(ASSETS / "shop.css")
+
+    async def shop_js(self, request):
+        return web.FileResponse(ASSETS / "shop.js")
+
+    async def shop_catalog(self, request):
+        result=shop_snapshot()
+        username=self.legacy.settings.gifts_subscription_bot_username
+        if username:
+            for item in result["packages"]:
+                if item["key"]=="gifts_intelligence": item["external_url"]=f"https://t.me/{username}?start=shop"
+        return web.json_response(result)
+
+    async def shop_order(self, request):
+        body=await request.json()
+        key=str(body.get("package_key") or "").strip()
+        brief=str(body.get("brief") or "").strip()
+        if key not in PACKAGES: raise web.HTTPBadRequest(text="Услуга не найдена")
+        if len(brief)<12: raise web.HTTPBadRequest(text="Опиши задачу чуть подробнее")
+        user=request["telegram_user"]; user_id=int(user.get("id") or 0); username=str(user.get("username") or "")
+        order_id=self.legacy.db.save_service_order(user_id,username,key,brief)
+        try: self.legacy.db.save_funnel_event(user_id,"order_created","miniapp",key)
+        except Exception: pass
+        admin_chat=self.legacy.db.get("admin_chat_id")
+        if admin_chat:
+            item=PACKAGES[key]; contact=f"@{username}" if username else f"ID <code>{user_id}</code>"
+            await self.legacy.bot.send_message(int(admin_chat),
+                f"<b>Новая Mini App-заявка #{order_id}</b>\n\n{html.escape(item.title)} · {html.escape(item.price_label)}\n"
+                f"Клиент: {contact}\nИсточник: Mini App\n\n{html.escape(brief)}",parse_mode="HTML")
+        return web.json_response({"ok":True,"order_id":order_id,"title":PACKAGES[key].title})
 
     async def health(self, request):
         return web.json_response({"ok": True, "service": "content-os-miniapp"})

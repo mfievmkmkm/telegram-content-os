@@ -4,12 +4,13 @@ import html
 import random
 
 import aiohttp
-from .channels import CHANNELS, CONTENT_LANES, FORMAT_ROTATION, FORMAT_RULES, POST_RULES
+from .channels import CHANNELS, FORMAT_ROTATION, FORMAT_RULES, POST_RULES
 from .hooks import score_hook
 from .sources import collect_items
 from .formatting import clean_generated_post, decorate_post, plain_text
 from .course_retrieval import select_course_snippets
 from .fact_layer import FactPack, FactStore
+from .topic_rotation import TopicRotation
 
 
 class Editor:
@@ -26,12 +27,13 @@ class Editor:
                 if response.status >= 400: raise RuntimeError(f"LLM HTTP {response.status}: {body[:240]}")
                 return (await response.json())["choices"][0]["message"]["content"].strip()
 
-    async def material(self, channel_key):
-        if random.random() < .35: return {"title":random.choice(CHANNELS[channel_key]["topics"]),"url":"","summary":""}
+    async def material(self, channel_key, choice=None):
+        fallback = choice.seed if choice else random.choice(CHANNELS[channel_key]["topics"])
+        if random.random() < .35: return {"title":fallback,"url":"","summary":""}
         used = self.db.used_hashes(channel_key)
         for item in await asyncio.to_thread(collect_items, channel_key):
             if item["url"] and hashlib.sha256(item["url"].encode()).hexdigest() not in used: return item
-        return {"title":random.choice(CHANNELS[channel_key]["topics"]),"url":"","summary":""}
+        return {"title":fallback,"url":"","summary":""}
 
     @staticmethod
     def format_rule(format_key):
@@ -52,10 +54,12 @@ class Editor:
         return text
 
     async def create(self, channel_key):
-        cfg, material = CHANNELS[channel_key], await self.material(channel_key)
+        cfg = CHANNELS[channel_key]
+        topic_choice = TopicRotation(self.db).next(channel_key)
+        material = await self.material(channel_key, topic_choice)
         counter=int(self.db.get(f"editorial_rotation:{channel_key}") or 0); self.db.set(f"editorial_rotation:{channel_key}",str(counter+1))
         rotation=FORMAT_ROTATION[channel_key]; format_key=rotation[counter%len(rotation)]
-        lanes=CONTENT_LANES[channel_key]; lane=lanes[counter%len(lanes)]
+        lane=topic_choice.lane
         facts = (f"Заголовок: {material['title']}\nФрагмент: {material['summary']}\n"
                  f"Источник: {material.get('source_name','internet')} · рейтинг {material.get('score','—')}\nURL: {material['url']}") if material["url"] else f"Тема: {material['title']}"
         examples=[row["text"][:1000] for row in self.db.style_examples(channel_key)]
@@ -69,8 +73,12 @@ class Editor:
         insights=self.db.editorial_insights(channel_key)
         learned=("\n\nНАША СТАТИСТИКА: лучше всего работают "+", ".join(f"{x['format_key']} (ER {x['avg_er']:.2f}%, {x['samples']} пост.)" for x in insights)+
                  ". Это ориентир для ритма и угла, но не повод повторять тему.") if insights else ""
-        prompt = (f"Рубрика: {format_key}. Тематический угол этого выпуска: {lane}. Формат: {self.format_rule(format_key)} "
-                  f"Создай оригинальный пост. Не своди каждый Gifts-пост к floor/FOMO и каждый футбольный пост к страху тренера.\n{facts}{style}{trends}{learned}")
+        recent_topics=TopicRotation(self.db).recent(channel_key,12)
+        exclusions=("\n\nПОСЛЕДНИЕ ТЕМЫ — нельзя повторять их главный конфликт, объект и вывод:\n- "+
+                    "\n- ".join(_first[:180] for _first in recent_topics)) if recent_topics else ""
+        prompt = (f"Рубрика: {format_key}. ОБЯЗАТЕЛЬНАЯ новая тематическая ось: {lane}. Формат: {self.format_rule(format_key)} "
+                  f"Создай оригинальный пост. Тема должна быть узнаваемо другой по объекту, конфликту и выводу. "
+                  f"Не своди каждый Gifts-пост к floor/FOMO и каждый футбольный пост к страху тренера.\n{facts}{exclusions}{style}{trends}{learned}")
         text = await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,prompt),"Сохрани заданную рубрику и объём.")
         score, reasons = score_hook(plain_text(text))
         if score < 3:

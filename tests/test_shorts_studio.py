@@ -7,8 +7,8 @@ def sample_brief():
     return ShortBrief(
         title="Не смотри только на floor",
         hook="Floor показывает далеко не всё",
-        voiceover=" ".join(["слово"] * 50),
-        scenes=[ShortScene(4, f"scene {index}") for index in range(6)],
+        voiceover=" ".join(["слово"] * 80),
+        scenes=[ShortScene(4, f"scene {index}") for index in range(8)],
         caption="caption",
         music_mood="tension",
         cta="Проверяешь модель?",
@@ -45,5 +45,5 @@ def test_presets_have_production_defaults():
 def test_script_validation_accepts_complete_brief():
     brief = sample_brief()
     ShortScriptService.validate(brief)
-    assert brief.duration == 24
-    assert brief.word_count == 50
+    assert brief.duration == 32
+    assert brief.word_count == 80

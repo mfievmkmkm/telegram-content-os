@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from content_os.database import Database
-from content_os.miniapp_runtime import dashboard_snapshot, validate_init_data
+from content_os.miniapp_runtime import dashboard_snapshot, shop_snapshot, validate_init_data
+from content_os.sales.catalog import PACKAGES
 
 
 def signed_init_data(token="token", username="skillell", age=0):
@@ -42,3 +43,9 @@ def test_dashboard_snapshot_uses_shared_content_entities(tmp_path):
     assert snapshot["counts"]["review"] == 1
     assert snapshot["drafts"][0]["id"] == draft_id
     assert set(snapshot) >= {"drafts", "calendar", "analytics", "players", "orders", "experiments", "funnel", "challenges"}
+
+
+def test_customer_shop_exposes_every_sales_package():
+    snapshot = shop_snapshot()
+    assert {item["key"] for item in snapshot["packages"]} == set(PACKAGES)
+    assert {item["vertical"] for item in snapshot["packages"]} == {"football", "ai", "gifts"}
