@@ -447,13 +447,16 @@ async def passport_button(c:CallbackQuery):
 async def save_premium_emoji(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(maxsplit=2); channel=parts[1].lower() if len(parts)>1 else ""
-    if channel not in {"liga","gifts"}: return await message.answer("Пришли премиум-эмодзи вместе с командой:\n<code>/emoji liga ⚡</code> или <code>/emoji gifts 💎</code>",parse_mode=ParseMode.HTML)
+    if channel not in {"liga","gifts"}: return await message.answer("Отправь премиум-эмодзи отдельным сообщением, ответь на него командой:\n<code>/emoji liga</code> или <code>/emoji gifts</code>\n\nМожно также поставить несколько custom emoji прямо после команды.",parse_mode=ParseMode.HTML)
+    source=message.reply_to_message or message
+    source_text=source.text or source.caption or ""
+    source_entities=source.entities or source.caption_entities or []
     custom={}
-    for entity in message.entities or []:
+    for entity in source_entities:
         emoji_id=getattr(entity,"custom_emoji_id",None)
         if emoji_id:
-            fallback=entity.extract_from(message.text or "").replace("\ufe0f",""); custom[fallback]=str(emoji_id)
-    if not custom: return await message.answer("Я не увидел премиум-эмодзи. Отправь именно custom emoji, не обычный Unicode.")
+            fallback=entity.extract_from(source_text).replace("\ufe0f",""); custom[fallback]=str(emoji_id)
+    if not custom: return await message.answer("Я не увидел custom emoji. Сначала отправь сообщение с эмодзи из Premium-набора, затем ответь на него командой /emoji gifts или /emoji liga.")
     existing_raw=db.get(f"premium_emojis:{channel}") or "{}"
     try: existing=json.loads(existing_raw)
     except json.JSONDecodeError: existing={}

@@ -314,11 +314,15 @@ async def render(task_id: str, payload: dict):
             if scene.asset_type == "stock_video" and clips:
                 pieces = max(1, math.ceil(scene.seconds / 2.2))
                 piece_duration = scene.seconds / pieces
-                for _ in range(pieces):
-                    source = clips[stock_cursor % len(clips)]
-                    stock_cursor += 1
+                # Bind one search result to one semantic scene. Previously every
+                # 2.2-second piece advanced the global cursor, so one sentence
+                # could jump between unrelated clips while adjacent scenes still
+                # came from the same Pexels query.
+                source = clips[stock_cursor % len(clips)]
+                stock_cursor += 1
+                for piece_index in range(pieces):
                     output = folder / f"part-{part_index}.mp4"
-                    offset = (stock_cursor // max(1, len(clips))) * 1.3
+                    offset = piece_index * piece_duration
                     x = (-18, 0, 18)[part_index % 3]
                     y = (-30, 0, 30)[part_index % 3]
                     legacy.run([

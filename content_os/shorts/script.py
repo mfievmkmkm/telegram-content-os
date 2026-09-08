@@ -40,12 +40,13 @@ class ShortScriptService:
             data = self._parse(raw)
         except (ValueError, TypeError, json.JSONDecodeError):
             data = self._fallback(draft)
-        data.update(channel=draft["channel_key"], draft_id=draft["id"])
-        brief = ShortBrief.from_legacy(data)
-        brief.delivery_preset = delivery_key
         try:
+            data.update(channel=draft["channel_key"], draft_id=draft["id"])
+            brief = ShortBrief.from_legacy(data)
+            brief.delivery_preset = delivery_key
+            self._normalize(brief)
             self.validate(brief)
-        except ValueError:
+        except (ValueError, TypeError, AttributeError):
             data=self._fallback(draft); data.update(channel=draft["channel_key"],draft_id=draft["id"])
             brief=ShortBrief.from_legacy(data); brief.delivery_preset=delivery_key; self.validate(brief)
         return brief
@@ -71,20 +72,36 @@ class ShortScriptService:
             # A malformed LLM answer must never dead-end the operator. Preserve
             # the reviewed source and produce a deterministic editable script.
             data = self._fallback({"text": brief.voiceover, "channel_key": brief.channel})
-        data.update(channel=brief.channel, draft_id=brief.draft_id)
-        updated = ShortBrief.from_legacy(data)
-        updated.delivery_preset = brief.delivery_preset
-        updated.voice_preset = brief.voice_preset
-        updated.subtitle_preset = brief.subtitle_preset
         try:
+            data.update(channel=brief.channel, draft_id=brief.draft_id)
+            updated = ShortBrief.from_legacy(data)
+            updated.delivery_preset = brief.delivery_preset
+            updated.voice_preset = brief.voice_preset
+            updated.subtitle_preset = brief.subtitle_preset
+            self._normalize(updated)
             self.validate(updated)
-        except ValueError:
+        except (ValueError, TypeError, AttributeError):
             data=self._fallback({"text":brief.voiceover,"channel_key":brief.channel})
             data.update(channel=brief.channel,draft_id=brief.draft_id)
             updated=ShortBrief.from_legacy(data); updated.delivery_preset=brief.delivery_preset
             updated.voice_preset=brief.voice_preset; updated.subtitle_preset=brief.subtitle_preset
             self.validate(updated)
         return updated
+
+    @staticmethod
+    def _normalize(brief: ShortBrief) -> None:
+        """Repair harmless LLM contract drift without discarding good copy."""
+        hook = plain_text(brief.hook).strip()
+        words = hook.split()
+        if len(words) > 18:
+            # Aim below the hard limit so punctuation and later formatting cannot
+            # turn a two-second hook into a breathless sentence.
+            hook = " ".join(words[:16]).rstrip(" ,;:—–-")
+            if hook and hook[-1] not in ".!?":
+                hook += "!"
+            brief.hook = hook
+            if len(brief.title.split()) > 16:
+                brief.title = hook.rstrip("!?")[:70]
 
     @staticmethod
     def _parse(raw: str) -> dict:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import math
 import os
@@ -99,18 +100,23 @@ async def pexels_clips(terms:list[str],folder:Path,limit=10)->list[Path]:
     if not PEXELS_KEY: raise RuntimeError("PEXELS_API_KEY не задан в Shorts Worker")
     urls=[]; headers={"Authorization":PEXELS_KEY}
     async with aiohttp.ClientSession(headers=headers,timeout=aiohttp.ClientTimeout(total=90)) as session:
-        for term in terms:
-            async with session.get("https://api.pexels.com/videos/search",params={"query":term,"per_page":8,"orientation":"portrait"}) as response:
+        for term_index,term in enumerate(terms):
+            # One distinct clip per visual intent keeps neighbouring scenes from
+            # looking like two cuts of the same stock search. Vary pages
+            # deterministically so repeated renders do not always use result #1.
+            page=1+(int(hashlib.sha256(f"{term}:{term_index}".encode()).hexdigest()[:4],16)%4)
+            async with session.get("https://api.pexels.com/videos/search",params={"query":term,"per_page":12,"orientation":"portrait","page":page}) as response:
                 if response.status>=400: continue
-                added=0
                 for video in (await response.json()).get("videos",[]):
                     files=video.get("video_files") or []
                     vertical=[x for x in files if int(x.get("height") or 0)>int(x.get("width") or 0) and int(x.get("width") or 0)>=540]
                     candidates=vertical or files
                     if candidates:
                         choice=min(candidates,key=lambda x:abs(int(x.get("width") or 720)-720)); url=choice.get("link")
-                        if url and url not in urls: urls.append(url); added+=1
-                    if len(urls)>=limit or added>=2: break
+                        if url and url not in urls:
+                            urls.append(url)
+                            break
+                    if len(urls)>=limit: break
             if len(urls)>=limit: break
         paths=[]
         for index,url in enumerate(urls):
