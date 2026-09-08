@@ -29,3 +29,10 @@ def test_optional_systems_are_not_release_blockers():
     assert statuses["shop"].ready
     assert statuses["matchlens"].ready
     assert statuses["premium_publish"].ready
+
+
+def test_railway_public_url_enables_miniapp_without_manual_port():
+    data=env(); data["MINIAPP_PUBLIC_URL"]="https://editor.example"
+    statuses={item.key:item for item in subsystem_statuses(data)}
+    assert statuses["miniapp"].ready
+    assert statuses["miniapp"].warning == ""

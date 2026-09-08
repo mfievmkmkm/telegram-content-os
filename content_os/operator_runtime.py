@@ -20,7 +20,7 @@ from .editorial_memory import EditorialMemory
 from .meme_engine import build_meme
 from .planner_v2 import ContentCandidate
 from .release_gate import evaluate_release
-from .system_health import subsystem_statuses
+from .system_health import SubsystemStatus, subsystem_statuses
 from .growth.experiment_store import ExperimentStore
 
 PLAN_KEY = "v2:today:actions"
@@ -306,7 +306,17 @@ def install(legacy):
     async def readiness(c:CallbackQuery):
         if not legacy.admin(c): return
         gate=evaluate_release(os.environ,require_shorts=True); rows=[]
-        for item in subsystem_statuses(os.environ):
+        statuses=list(subsystem_statuses(os.environ))
+        # Worker secrets belong to their own Railway services. Probe their
+        # public /health endpoints instead of requiring duplicated secrets in Editor.
+        shorts_ready,shorts_detail=await legacy.videos.probe()
+        match_ready,match_detail=await legacy.matchlens.probe()
+        replacements={
+            "shorts_worker":SubsystemStatus("shorts_worker","Shorts worker",shorts_ready,(),shorts_detail),
+            "matchlens":SubsystemStatus("matchlens","MatchLens",match_ready,(),match_detail),
+        }
+        statuses=[replacements.get(item.key,item) for item in statuses]
+        for item in statuses:
             icon="●" if item.ready else "○"; detail=item.warning or ("нужно: "+", ".join(item.missing) if item.missing else "готов")
             rows.append(f"{icon} <b>{html.escape(item.title)}</b>  <i>{html.escape(detail)}</i>")
         warnings="\n".join(f"• {html.escape(item)}" for item in gate.warnings) or "нет"

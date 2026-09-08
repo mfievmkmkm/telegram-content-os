@@ -125,8 +125,14 @@ class MiniAppRuntime:
 
     async def dashboard(self, request):
         result = dashboard_snapshot(self.legacy.db)
-        result["system"] = [{"key": item.key, "title": item.title, "ready": item.ready,
-                             "warning": item.warning, "missing": list(item.missing)} for item in subsystem_statuses(__import__("os").environ)]
+        statuses=list(subsystem_statuses(__import__("os").environ))
+        shorts_ready,shorts_detail=await self.legacy.videos.probe()
+        match_ready,match_detail=await self.legacy.matchlens.probe()
+        live={"shorts_worker":(shorts_ready,shorts_detail),"matchlens":(match_ready,match_detail)}
+        result["system"] = [{"key": item.key, "title": item.title,
+                             "ready": live.get(item.key,(item.ready,""))[0],
+                             "warning": live.get(item.key,(item.ready,item.warning))[1] or item.warning,
+                             "missing": [] if item.key in live else list(item.missing)} for item in statuses]
         return web.json_response(result)
 
     async def challenge_draft(self, request):
