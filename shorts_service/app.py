@@ -105,18 +105,20 @@ async def pexels_clips(terms:list[str],folder:Path,limit=10)->list[Path]:
             # looking like two cuts of the same stock search. Vary pages
             # deterministically so repeated renders do not always use result #1.
             page=1+(int(hashlib.sha256(f"{term}:{term_index}".encode()).hexdigest()[:4],16)%4)
-            async with session.get("https://api.pexels.com/videos/search",params={"query":term,"per_page":12,"orientation":"portrait","page":page}) as response:
-                if response.status>=400: continue
-                for video in (await response.json()).get("videos",[]):
-                    files=video.get("video_files") or []
-                    vertical=[x for x in files if int(x.get("height") or 0)>int(x.get("width") or 0) and int(x.get("width") or 0)>=540]
-                    candidates=vertical or files
-                    if candidates:
-                        choice=min(candidates,key=lambda x:abs(int(x.get("width") or 720)-720)); url=choice.get("link")
-                        if url and url not in urls:
-                            urls.append(url)
-                            break
-                    if len(urls)>=limit: break
+            found=False
+            for candidate_page in dict.fromkeys((page,1)):
+                async with session.get("https://api.pexels.com/videos/search",params={"query":term,"per_page":12,"orientation":"portrait","page":candidate_page}) as response:
+                    if response.status>=400: continue
+                    for video in (await response.json()).get("videos",[]):
+                        files=video.get("video_files") or []
+                        vertical=[x for x in files if int(x.get("height") or 0)>int(x.get("width") or 0) and int(x.get("width") or 0)>=540]
+                        candidates=vertical or files
+                        if candidates:
+                            choice=min(candidates,key=lambda x:abs(int(x.get("width") or 720)-720)); url=choice.get("link")
+                            if url and url not in urls:
+                                urls.append(url); found=True
+                                break
+                if found: break
             if len(urls)>=limit: break
         paths=[]
         for index,url in enumerate(urls):
