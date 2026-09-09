@@ -32,7 +32,10 @@ DELIVERY_PRESETS = {
 # Provider names are stable domain identifiers. Actual credentials/voice IDs stay
 # in Railway environment variables and are resolved by the Shorts Worker.
 VOICE_PRESETS = {
-    "auto_ru": VoicePreset("auto_ru", "🇷🇺 Авто · русский", "speechkit", "lera", 1.06),
+    # ElevenLabs is the accepted production voice for this project. Keep the
+    # automatic preset on it so a fresh Railway deploy without SpeechKit never
+    # fails its first render or silently selects a lower-quality voice.
+    "auto_ru": VoicePreset("auto_ru", "💎 ElevenLabs · основной", "elevenlabs", "configured", 1.04),
     "ru_lera": VoicePreset("ru_lera", "Lera · энергично", "speechkit", "lera", 1.06),
     "ru_marina": VoicePreset("ru_marina", "Marina · уверенно", "speechkit", "marina", 1.02),
     "ru_anton": VoicePreset("ru_anton", "Anton · энергично", "speechkit", "anton", 1.05),

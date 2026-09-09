@@ -134,7 +134,7 @@ def install(legacy):
         if not legacy.admin(c): return
         job_id=c.data.rsplit(":",1)[-1]; brief=studio.sessions.load(job_id)
         if not brief: return await c.answer("Shorts-сессия не найдена",show_alert=True)
-        await c.answer(); await c.message.answer("🎙 <b>Голос</b>\n\nРусский SpeechKit — основной автоматический режим. ElevenLabs оставляем как premium-вариант.",parse_mode=ParseMode.HTML,reply_markup=voice_keyboard(job_id,brief.channel,brief.voice_preset))
+        await c.answer(); await c.message.answer("🎙 <b>Голос</b>\n\nElevenLabs — основной автоматический режим. SpeechKit оставлен дополнительным вариантом, если позже подключишь Yandex.",parse_mode=ParseMode.HTML,reply_markup=voice_keyboard(job_id,brief.channel,brief.voice_preset))
 
     @router.callback_query(F.data.startswith("shortsv2:voice:"))
     async def choose_voice(c: CallbackQuery, state: FSMContext):
