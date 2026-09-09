@@ -38,7 +38,7 @@ def test_targeted_edit_invalidates_only_requested_stage():
 
 def test_presets_have_production_defaults():
     assert delivery("meme").key == "meme"
-    assert voice("auto_ru").provider == "speechkit"
+    assert voice("auto_ru").provider == "elevenlabs"
     assert voice("missing").key == "auto_ru"
 
 
