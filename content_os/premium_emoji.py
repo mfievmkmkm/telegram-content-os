@@ -31,7 +31,10 @@ CATALOG = (
 RECOMMENDED_PACKS = ("AdaptiveIcons", "AdaptiveLines", "AdaptivePremium")
 BRAND_FALLBACKS = frozenset(
     {item.fallback.replace("\ufe0f", "") for item in CATALOG}
-    | {"🎁", "📈", "📊", "💰", "✅", "❌", "⭐", "🚀", "🔒", "🛡", "💡", "🤝"}
+    | {
+        "🎁", "🎬", "📲", "🤖", "✍", "🏠", "🛒", "📈", "📊", "💰",
+        "✅", "❌", "⭐", "🚀", "🔒", "🛡", "💡", "🤝", "🎙",
+    }
 )
 
 

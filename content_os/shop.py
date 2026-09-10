@@ -30,29 +30,29 @@ OFFERS = {
 def storefront(gifts_bot_username: str="vsdvscbot") -> InlineKeyboardMarkup:
     username=gifts_bot_username.strip().lstrip("@") or "vsdvscbot"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚽ LIGA PROGRESS · футбол",callback_data="shop:category:liga")],
-        [InlineKeyboardButton(text="⚡ DIGITAL LAB · услуги",callback_data="shop:category:services")],
-        [InlineKeyboardButton(text="🎁 GIFTS INTELLIGENCE · подписка",url=f"https://t.me/{username}?start=shop")],
-        [InlineKeyboardButton(text="🎯 Подобрать услугу бесплатно",callback_data="shop:diagnostic")],
+        [InlineKeyboardButton(text="◇ Футбол · разбор и развитие",callback_data="shop:category:liga")],
+        [InlineKeyboardButton(text="◇ Контент · AI и Telegram",callback_data="shop:category:services")],
+        [InlineKeyboardButton(text="◇ Gifts Intelligence · доступ",url=f"https://t.me/{username}?start=shop")],
+        [InlineKeyboardButton(text="◆ Подобрать решение",callback_data="shop:diagnostic")],
     ])
 
 
 def category_keyboard(category: str) -> InlineKeyboardMarkup:
     keys=[key for key,item in OFFERS.items() if item.category==category]
     rows=[[InlineKeyboardButton(text=f"{OFFERS[key].title} · {OFFERS[key].price}",callback_data=f"shop:offer:{key}")] for key in keys]
-    rows.append([InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")])
+    rows.append([InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def offer_keyboard(key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Оставить заявку →",callback_data=f"shop:order:{key}")],
-        [InlineKeyboardButton(text="‹ Назад",callback_data=f"shop:category:{OFFERS[key].category}"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
+        [InlineKeyboardButton(text="‹ Назад",callback_data=f"shop:category:{OFFERS[key].category}"),InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home")],
     ])
 
 
 def shop_nav(back_callback: str="shop:home") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="‹ Назад",callback_data=back_callback),
-        InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home"),
+        InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home"),
     ]])

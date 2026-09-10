@@ -1,13 +1,16 @@
 import html
+import json
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonCommands, MenuButtonWebApp, Message, WebAppInfo
 
 from .campaigns import parse_campaign
+from .formatting import telegram_html
 from .sales import DiagnosticInput, recommend
 from .shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefront
 
@@ -25,10 +28,31 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         try: db.save_funnel_event(user_id,event_type,source,offer_key)
         except Exception: pass
 
+    def ui(value):
+        raw=db.get("premium_emojis:ui") or "{}"
+        try: custom=json.loads(raw)
+        except (TypeError,json.JSONDecodeError): custom={}
+        return telegram_html(value,custom)
+
+    async def answer_ui(message,value,**kwargs):
+        """Use custom emoji where Bot API allows it, without breaking the shop."""
+        rendered=ui(value)
+        try: return await message.answer(rendered,**kwargs)
+        except TelegramBadRequest:
+            if rendered==value: raise
+            return await message.answer(value,**kwargs)
+
+    async def edit_ui(message,value,**kwargs):
+        rendered=ui(value)
+        try: return await message.edit_text(rendered,**kwargs)
+        except TelegramBadRequest:
+            if rendered==value: raise
+            return await message.edit_text(value,**kwargs)
+
     def home_keyboard():
         keyboard=storefront(settings.gifts_subscription_bot_username)
         if settings.miniapp_public_url:
-            keyboard.inline_keyboard.insert(0,[InlineKeyboardButton(text="✦ Открыть магазин",web_app=WebAppInfo(url=f"{settings.miniapp_public_url}/shop"))])
+            keyboard.inline_keyboard.insert(0,[InlineKeyboardButton(text="◆ Открыть витрину",web_app=WebAppInfo(url=f"{settings.miniapp_public_url}/shop"))])
         return keyboard
 
     HOME=("<b>CONTENT OS LAB</b>\n\n"
@@ -42,13 +66,13 @@ def create_shop_runtime(settings,db,editor,admin_bot):
 
     def diagnostic_keyboard():
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⚽ Улучшить игру",callback_data="sales:goal:football")],
-            [InlineKeyboardButton(text="🎬 Делать Shorts / Reels",callback_data="sales:goal:shorts")],
-            [InlineKeyboardButton(text="📲 Прокачать Telegram",callback_data="sales:goal:telegram")],
-            [InlineKeyboardButton(text="🤖 Автоматизировать работу",callback_data="sales:goal:automation")],
-            [InlineKeyboardButton(text="🎁 Gifts Intelligence",callback_data="sales:goal:gifts")],
-            [InlineKeyboardButton(text="✍️ Своя задача",callback_data="sales:goal:custom")],
-            [InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
+            [InlineKeyboardButton(text="◇ Улучшить игру",callback_data="sales:goal:football")],
+            [InlineKeyboardButton(text="◇ Собрать Shorts / Reels",callback_data="sales:goal:shorts")],
+            [InlineKeyboardButton(text="◇ Прокачать Telegram",callback_data="sales:goal:telegram")],
+            [InlineKeyboardButton(text="◇ Автоматизировать работу",callback_data="sales:goal:automation")],
+            [InlineKeyboardButton(text="◇ Gifts Intelligence",callback_data="sales:goal:gifts")],
+            [InlineKeyboardButton(text="＋ Своя задача",callback_data="sales:goal:custom")],
+            [InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home")],
         ])
 
     def recommendation_markup(rec,source=""):
@@ -58,16 +82,16 @@ def create_shop_runtime(settings,db,editor,admin_bot):
             payload=source if parse_campaign(source) else "shop"
             return InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Открыть Gifts Intelligence →",url=f"https://t.me/{username}?start={payload}")],
-                [InlineKeyboardButton(text="↩️ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
+                [InlineKeyboardButton(text="‹ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home")],
             ])
         legacy_key=next((key for key in pkg.legacy_offer_keys if key in OFFERS),None)
         if legacy_key:
             return InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Посмотреть решение →",callback_data=f"shop:offer:{legacy_key}")],
-                [InlineKeyboardButton(text="↩️ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
+                [InlineKeyboardButton(text="‹ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home")],
             ])
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="🏠 Главная",callback_data="shop:home")],
+            [InlineKeyboardButton(text="‹ Другая задача",callback_data="shop:diagnostic"),InlineKeyboardButton(text="⌂ Главная",callback_data="shop:home")],
         ])
 
     async def show_recommendation(message,rec,source="direct"):
@@ -81,7 +105,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
               f"<b>Стоимость:</b> {html.escape(pkg.price_label)}\n"
               f"<b>Срок:</b> {html.escape(pkg.turnaround)}\n\n"
               f"<i>{html.escape(rec.reason)} · уверенность {rec.confidence}%</i>{missing}")
-        await message.answer(text,parse_mode=ParseMode.HTML,reply_markup=recommendation_markup(rec,source))
+        await answer_ui(message,text,parse_mode=ParseMode.HTML,reply_markup=recommendation_markup(rec,source))
 
     @router.message(CommandStart())
     @router.message(Command("shop"))
@@ -102,13 +126,13 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         if payload=="service_liga":
             rec=recommend(DiagnosticInput(goal="Хочу улучшить свою игру",vertical="football"))
             return await show_recommendation(message,rec,source)
-        await message.answer(HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard())
+        await answer_ui(message,HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard())
 
     @router.callback_query(F.data=="shop:home")
     async def back(c:CallbackQuery,state:FSMContext):
         current=await state.get_data(); source=current.get("shop_source","direct")
         await state.clear(); await state.update_data(shop_source=source)
-        await c.message.edit_text(HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard()); await c.answer()
+        await edit_ui(c.message,HOME,parse_mode=ParseMode.HTML,reply_markup=home_keyboard()); await c.answer()
 
     @router.callback_query(F.data.startswith("shop:category:"))
     async def category(c:CallbackQuery,state:FSMContext):
@@ -120,7 +144,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
             text="<b>FOOTBALL LAB</b>\n\nОт конкретного эпизода к плану развития. Выбери формат, если уже точно знаешь, что тебе нужно"
         else:
             text="<b>AI CONTENT LAB</b>\n\nКонтент и автоматизация как готовый результат. Каталог — для тех, кто уже определился"
-        await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=category_keyboard(key)); await c.answer()
+        await edit_ui(c.message,text,parse_mode=ParseMode.HTML,reply_markup=category_keyboard(key)); await c.answer()
 
     @router.callback_query(F.data.startswith("shop:offer:"))
     async def offer(c:CallbackQuery,state:FSMContext):
@@ -133,7 +157,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
               f"{html.escape(item.description)}\n\n"
               f"<b>Получишь:</b> {html.escape(item.result)}\n"
               f"<b>Срок:</b> {html.escape(item.turnaround)}")
-        await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=offer_keyboard(key)); await c.answer()
+        await edit_ui(c.message,text,parse_mode=ParseMode.HTML,reply_markup=offer_keyboard(key)); await c.answer()
 
     @router.callback_query(F.data.startswith("shop:order:"))
     async def order(c:CallbackQuery,state:FSMContext):
@@ -142,7 +166,7 @@ def create_shop_runtime(settings,db,editor,admin_bot):
         current=await state.get_data(); await state.set_state(ClientState.waiting_brief)
         await state.update_data(offer_key=key,shop_source=current.get("shop_source","direct"))
         prompt="Пришли видео или ссылку и напиши позицию игрока" if OFFERS[key].category=="liga" else "Опиши задачу, площадку и какой результат хочешь получить"
-        await c.message.edit_text(f"<b>Заявка · {html.escape(OFFERS[key].title)}</b>\n\n{prompt}\n\nК файлу обязательно добавь короткую подпись с задачей",parse_mode=ParseMode.HTML,reply_markup=shop_nav(f"shop:offer:{key}")); await c.answer()
+        await edit_ui(c.message,f"<b>Заявка · {html.escape(OFFERS[key].title)}</b>\n\n{prompt}\n\nК файлу обязательно добавь короткую подпись с задачей",parse_mode=ParseMode.HTML,reply_markup=shop_nav(f"shop:offer:{key}")); await c.answer()
 
     @router.message(ClientState.waiting_brief)
     async def brief(message:Message,state:FSMContext):
@@ -161,13 +185,13 @@ def create_shop_runtime(settings,db,editor,admin_bot):
                 try: await shop_bot.forward_message(int(admin_chat),message.chat.id,message.message_id)
                 except Exception: await admin_bot.send_message(int(admin_chat),"⚠️ В заявке есть вложение. Если оно не показалось здесь, открой диалог с клиентом по контакту выше")
         track(message.from_user.id,"order_created",data.get("shop_source","direct"),key); await state.clear()
-        await message.answer(f"<b>Заявка #{order_id} принята</b>\n\nСначала проверим материал и зафиксируем результат. После этого подтвердим объём и цену",parse_mode=ParseMode.HTML,reply_markup=home_keyboard())
+        await answer_ui(message,f"<b>Заявка #{order_id} принята</b>\n\nСначала проверим материал и зафиксируем результат. После этого подтвердим объём и цену",parse_mode=ParseMode.HTML,reply_markup=home_keyboard())
 
     @router.callback_query(F.data=="shop:diagnostic")
     async def diagnostic(c:CallbackQuery,state:FSMContext):
         data=await state.get_data(); source=data.get("shop_source","direct")
         await state.clear(); await state.update_data(shop_source=source)
-        await c.message.edit_text("<b>Что должно измениться?</b>\n\nСначала результат. Инструмент подберём потом",parse_mode=ParseMode.HTML,reply_markup=diagnostic_keyboard()); await c.answer()
+        await edit_ui(c.message,"<b>Что должно измениться?</b>\n\nСначала результат. Инструмент подберём потом",parse_mode=ParseMode.HTML,reply_markup=diagnostic_keyboard()); await c.answer()
 
     @router.callback_query(F.data.startswith("sales:goal:"))
     async def diagnostic_goal(c:CallbackQuery,state:FSMContext):

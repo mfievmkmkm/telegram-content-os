@@ -90,6 +90,13 @@ def render(channel_key,text):
     except (TypeError,json.JSONDecodeError): custom={}
     return telegram_html(text,semantic_custom_emojis(text,channel_key,custom,3))
 
+def render_ui(text):
+    """Render the admin/shop message surface with one coherent custom-emoji pack."""
+    raw=db.get("premium_emojis:ui") or "{}"
+    try: custom=json.loads(raw)
+    except (TypeError,json.JSONDecodeError): custom={}
+    return telegram_html(text,custom)
+
 async def premium_health():
     if not premium_publisher.ready: return "Bot API: переменные Premium-публикации не заполнены"
     lines=[]
@@ -106,35 +113,35 @@ def shop_health():
 
 def keyboard(draft_id):
     return InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="✅ В канал",callback_data=f"publish:{draft_id}"),InlineKeyboardButton(text="⏰ Выбрать время",callback_data=f"schedule:{draft_id}")],
-      [InlineKeyboardButton(text="🔥 Жёстче",callback_data=f"harder:{draft_id}"),InlineKeyboardButton(text="🔄 Другой заход",callback_data=f"rewrite:{draft_id}")],
-      [InlineKeyboardButton(text="✂️ Короче",callback_data=f"short:{draft_id}"),InlineKeyboardButton(text="🎬 Shorts",callback_data=f"shorts:{draft_id}")],
-      [InlineKeyboardButton(text="🗑 Удалить",callback_data=f"delete:{draft_id}")]])
+      [InlineKeyboardButton(text="◆ В канал",callback_data=f"publish:{draft_id}"),InlineKeyboardButton(text="◷ Выбрать время",callback_data=f"schedule:{draft_id}")],
+      [InlineKeyboardButton(text="▲ Жёстче",callback_data=f"harder:{draft_id}"),InlineKeyboardButton(text="↻ Другой заход",callback_data=f"rewrite:{draft_id}")],
+      [InlineKeyboardButton(text="— Короче",callback_data=f"short:{draft_id}"),InlineKeyboardButton(text="▶ Shorts",callback_data=f"shorts:{draft_id}")],
+      [InlineKeyboardButton(text="× Удалить",callback_data=f"delete:{draft_id}")]])
 
 def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="✍️ Создать пост",callback_data="panel:generate"),InlineKeyboardButton(text="⏰ Очередь",callback_data="panel:scheduled")],
-      [InlineKeyboardButton(text="⚽ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="🎁 Gifts Data",callback_data="panel:gifts")],
-      [InlineKeyboardButton(text="📚 Курсы",callback_data="panel:courses"),InlineKeyboardButton(text="📊 Аналитика постов",callback_data="panel:analytics")],
-      [InlineKeyboardButton(text="📥 Заявки",callback_data="panel:orders"),InlineKeyboardButton(text="⚙️ Управление",callback_data="panel:system")]])
+      [InlineKeyboardButton(text="＋ Создать пост",callback_data="panel:generate"),InlineKeyboardButton(text="◷ Очередь",callback_data="panel:scheduled")],
+      [InlineKeyboardButton(text="◆ Футбол и матчи",callback_data="panel:football"),InlineKeyboardButton(text="◇ Gifts Data",callback_data="panel:gifts")],
+      [InlineKeyboardButton(text="▦ Курсы",callback_data="panel:courses"),InlineKeyboardButton(text="↗ Аналитика постов",callback_data="panel:analytics")],
+      [InlineKeyboardButton(text="◫ Заявки",callback_data="panel:orders"),InlineKeyboardButton(text="⚙ Управление",callback_data="panel:system")]])
 
 def back_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])
 
 def admin_nav(back_callback="panel:home"):
     return InlineKeyboardMarkup(inline_keyboard=[[
       InlineKeyboardButton(text="‹ Назад",callback_data=back_callback),
-      InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])
+      InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])
 
 def match_job_keyboard(local_id,tracker_ids=(),result_url="",passport_players=()):
     rows=[]; ids=[str(value) for value in tracker_ids if str(value).isdigit()][:24]
     for index in range(0,len(ids),4):
         rows.append([InlineKeyboardButton(text=f"Игрок #{tracker}",callback_data=f"matchpick:{local_id}:{tracker}") for tracker in ids[index:index+4]])
-    if result_url: rows.append([InlineKeyboardButton(text="📊 Открыть отчёт",url=result_url)])
+    if result_url: rows.append([InlineKeyboardButton(text="↗ Открыть отчёт",url=result_url)])
     for player in list(passport_players)[:8]:
         rows.append([InlineKeyboardButton(text=f"➕ В паспорт: {player['display_name']}",callback_data=f"matchlink:{local_id}:{player['id']}")])
-    rows.append([InlineKeyboardButton(text="🔄 Обновить статус",callback_data=f"matchrefresh:{local_id}"),InlineKeyboardButton(text="‹ Футбол",callback_data="panel:football")])
-    rows.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    rows.append([InlineKeyboardButton(text="↻ Обновить статус",callback_data=f"matchrefresh:{local_id}"),InlineKeyboardButton(text="‹ Футбол",callback_data="panel:football")])
+    rows.append([InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 async def review(draft_id):
@@ -314,8 +321,8 @@ async def panel_home(c:CallbackQuery,state:FSMContext):
 async def panel_generate(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     await state.clear(); await c.message.edit_text("Куда бьём?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="⚽ Лига",callback_data="gen:liga"),InlineKeyboardButton(text="🎁 Gifts",callback_data="gen:gifts")],
-      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="◆ Лига",callback_data="gen:liga"),InlineKeyboardButton(text="◇ Gifts",callback_data="gen:gifts")],
+      [InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.callback_query(F.data=="panel:shop")
 async def panel_shop(c:CallbackQuery,state:FSMContext):
@@ -337,7 +344,7 @@ async def panel_orders(c:CallbackQuery):
         lines.append(f"\n<b>#{row['id']} · {html.escape(name)}</b>\n{html.escape(contact)}\n{html.escape(row['brief'][:240])}")
         buttons.append([InlineKeyboardButton(text=f"✅ В работу #{row['id']}",callback_data=f"order:accept:{row['id']}"),InlineKeyboardButton(text="Закрыть",callback_data=f"order:close:{row['id']}")])
         buttons.append([InlineKeyboardButton(text=f"💬 Написать клиенту #{row['id']}",url=f"tg://user?id={row['user_id']}")])
-    buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    buttons.append([InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     await c.message.edit_text("\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
 
 @router.callback_query(F.data.startswith("order:"))
@@ -357,28 +364,28 @@ async def order_status(c:CallbackQuery):
 async def panel_football(c:CallbackQuery):
     if not admin(c): return
     await safe_edit_text(c.message,"⚽ <b>Футбольная лаборатория</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="📡 Матчи сегодня",callback_data="panel:games"),InlineKeyboardButton(text="🎥 Разобрать видео",callback_data="panel:match")],
-      [InlineKeyboardButton(text="🔎 Статус разбора",callback_data="panel:matchhelp"),InlineKeyboardButton(text="🎯 Выбрать игрока",callback_data="panel:targethelp")],
-      [InlineKeyboardButton(text="👤 Player Passport",callback_data="panel:players")],
-      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="◎ Матчи сегодня",callback_data="panel:games"),InlineKeyboardButton(text="▶ Разобрать видео",callback_data="panel:match")],
+      [InlineKeyboardButton(text="◉ Статус разбора",callback_data="panel:matchhelp"),InlineKeyboardButton(text="◇ Выбрать игрока",callback_data="panel:targethelp")],
+      [InlineKeyboardButton(text="◫ Player Passport",callback_data="panel:players")],
+      [InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.callback_query(F.data=="panel:players")
 async def panel_players(c:CallbackQuery):
     if not admin(c): return
     await c.message.edit_text("👤 <b>Player Passport</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="➕ Новый футболист",callback_data="panel:newplayer"),InlineKeyboardButton(text="📚 Все футболисты",callback_data="panel:playerlist")],
-      [InlineKeyboardButton(text="🔗 Привязать матч",callback_data="panel:linkhelp"),InlineKeyboardButton(text="📈 Открыть паспорт",callback_data="panel:passporthelp")],
-      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="＋ Новый футболист",callback_data="panel:newplayer"),InlineKeyboardButton(text="▦ Все футболисты",callback_data="panel:playerlist")],
+      [InlineKeyboardButton(text="◇ Привязать матч",callback_data="panel:linkhelp"),InlineKeyboardButton(text="↗ Открыть паспорт",callback_data="panel:passporthelp")],
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.callback_query(F.data=="panel:system")
 async def panel_system(c:CallbackQuery):
     if not admin(c): return
     await c.message.edit_text("⚙️ <b>Система</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="🟢 Состояние",callback_data="panel:status"),InlineKeyboardButton(text="✨ Premium эмодзи",callback_data="panel:emojihelp")],
+      [InlineKeyboardButton(text="● Состояние",callback_data="panel:status"),InlineKeyboardButton(text="✦ Premium эмодзи",callback_data="panel:emojihelp")],
       [InlineKeyboardButton(text="◆ Установить GI emoji pack",callback_data="panel:emojiauto:gifts")],
-      [InlineKeyboardButton(text="📚 База курсов",callback_data="panel:courses")],
-      [InlineKeyboardButton(text="🧬 Обновить память",callback_data="panel:sync"),InlineKeyboardButton(text="📊 Аналитика",callback_data="panel:analytics")],
-      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="▦ База курсов",callback_data="panel:courses")],
+      [InlineKeyboardButton(text="↻ Обновить память",callback_data="panel:sync"),InlineKeyboardButton(text="↗ Аналитика",callback_data="panel:analytics")],
+      [InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.message(Command("playeradd"))
 async def player_add(message:Message):
@@ -397,7 +404,7 @@ async def player_list(message:Message):
     if not rows: return await message.answer("Профилей пока нет. Создать: <code>/playeradd Имя | год | позиция | нога</code>",parse_mode=ParseMode.HTML)
     lines=[f"#{row['id']} · <b>{html.escape(row['display_name'])}</b> · {html.escape(row['position'] or 'позиция не указана')}" for row in rows[:30]]
     buttons=[[InlineKeyboardButton(text=f"📈 {row['display_name']}",callback_data=f"passport:{row['id']}")] for row in rows[:20]]
-    buttons.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:players"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    buttons.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:players"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     await message.answer("👤 <b>Player Passports</b>\n\n"+"\n".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @router.message(Command("playerlink"))
@@ -447,7 +454,7 @@ async def passport_button(c:CallbackQuery):
 async def save_premium_emoji(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(maxsplit=2); channel=parts[1].lower() if len(parts)>1 else ""
-    if channel not in {"liga","gifts"}: return await message.answer("Отправь премиум-эмодзи отдельным сообщением, ответь на него командой:\n<code>/emoji liga</code> или <code>/emoji gifts</code>\n\nМожно также поставить несколько custom emoji прямо после команды.",parse_mode=ParseMode.HTML)
+    if channel not in {"liga","gifts","ui"}: return await message.answer("Отправь премиум-эмодзи отдельным сообщением, ответь на него командой:\n<code>/emoji ui</code> — панель и магазин\n<code>/emoji liga</code> или <code>/emoji gifts</code> — публикации\n\nМожно также поставить несколько custom emoji прямо после команды.",parse_mode=ParseMode.HTML)
     source=message.reply_to_message or message
     source_text=source.text or source.caption or ""
     source_entities=source.entities or source.caption_entities or []
@@ -478,7 +485,7 @@ async def install_adaptive_emoji_pack(channel:str) -> tuple[dict[str,str],list[s
 async def install_emoji_pack_command(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(); channel=parts[1].lower() if len(parts)>1 else "gifts"
-    if channel not in {"liga","gifts"}: channel="gifts"
+    if channel not in {"liga","gifts","ui"}: channel="ui"
     custom,failed=await install_adaptive_emoji_pack(channel)
     if not custom:
         return await message.answer("Не смог получить Adaptive-наборы. Попробуй ещё раз через минуту.")
@@ -505,7 +512,7 @@ async def games(message:Message):
     rows=fixtures_keyboard_rows(fixtures)
     if not rows: return await wait.edit_text("Сегодня в выбранных турнирах матчей не найдено.")
     keyboard_rows=[[InlineKeyboardButton(text=label,callback_data=f"gamepost:{fixture_id}")] for label,fixture_id in rows]
-    keyboard_rows.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    keyboard_rows.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     await wait.edit_text("⚽ <b>Какой матч вскрываем?</b>\n\nБот возьмёт реальные события и статистику, найдёт один сильный конфликт и соберёт пост.",
                          parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows))
 
@@ -551,9 +558,9 @@ async def match_player(message:Message,state:FSMContext):
     if len(player)<2: return await message.answer("Опиши номер, цвет формы и позицию чуть точнее.")
     await state.update_data(player_ref=player); await state.set_state(MatchState.waiting_mode)
     await message.answer("Что собираем?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="👤 Только игрок",callback_data="matchmode:player"),InlineKeyboardButton(text="🧩 Команда",callback_data="matchmode:team")],
-      [InlineKeyboardButton(text="🔥 Полный разбор",callback_data="matchmode:full")],
-      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:match"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]))
+      [InlineKeyboardButton(text="◫ Только игрок",callback_data="matchmode:player"),InlineKeyboardButton(text="◇ Команда",callback_data="matchmode:team")],
+      [InlineKeyboardButton(text="◆ Полный разбор",callback_data="matchmode:full")],
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:match"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]]))
 
 @router.callback_query(MatchState.waiting_mode,F.data.startswith("matchmode:"))
 async def match_submit(c:CallbackQuery,state:FSMContext):
@@ -696,17 +703,17 @@ async def menu(message:Message,state:FSMContext):
     if not admin(message): return
     await state.clear()
     await message.answer("Куда бьём?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-      InlineKeyboardButton(text="⚽ Лига",callback_data="gen:liga"),InlineKeyboardButton(text="🎁 Gifts",callback_data="gen:gifts")]]))
+      InlineKeyboardButton(text="◆ Лига",callback_data="gen:liga"),InlineKeyboardButton(text="◇ Gifts",callback_data="gen:gifts")]]))
 
 @router.callback_query(F.data.startswith("gen:"))
 async def gen_cb(c:CallbackQuery):
     if not admin(c): return
     channel=c.data.split(":")[1]
     await c.message.edit_text("Как собираем пост?",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="⚡ Авто: свежий заход",callback_data=f"genmode:{channel}:auto")],
-      [InlineKeyboardButton(text="✍️ Напишу тему",callback_data=f"genmode:{channel}:topic"),InlineKeyboardButton(text="🔗 Из статьи",callback_data=f"genmode:{channel}:url")],
-      [InlineKeyboardButton(text="🎞 Фирменная серия",callback_data=f"genmode:{channel}:series")],
-      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:generate"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="✦ Авто: свежий заход",callback_data=f"genmode:{channel}:auto")],
+      [InlineKeyboardButton(text="＋ Напишу тему",callback_data=f"genmode:{channel}:topic"),InlineKeyboardButton(text="↗ Из статьи",callback_data=f"genmode:{channel}:url")],
+      [InlineKeyboardButton(text="◇ Фирменная серия",callback_data=f"genmode:{channel}:series")],
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:generate"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
 
 def rubric_keyboard(channel):
     labels={"короткий_удар":"⚡ Короткий удар","история":"🎭 История","антисистема":"🥊 Антисистема","разбор":"🔬 Разбор","тренировка":"🏋️ Тренировка",
@@ -714,7 +721,7 @@ def rubric_keyboard(channel):
             "сигнал_или_шум":"📡 Сигнал/шум","мем":"😏 Мем"}
     rows=[[InlineKeyboardButton(text=labels.get(fmt,fmt.replace("_"," ").title()),callback_data=f"rubric:{fmt}")]
       for fmt in CHANNELS[channel]["formats"]]
-    rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.callback_query(F.data.startswith("genmode:"))
@@ -727,7 +734,7 @@ async def generation_mode(c:CallbackQuery,state:FSMContext):
         rows=[[InlineKeyboardButton(text=f"{name}",callback_data=f"series:{channel}:{key}"),
                InlineKeyboardButton(text="Сезон ×3",callback_data=f"seriespack:{channel}:{key}")]
               for key,(name,_,_) in SERIES[channel].items()]
-        rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+        rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
         await c.message.edit_text("Выбирай сериал — бот сохранит его характер:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)); return await c.answer()
     await state.update_data(channel=channel)
     if mode=="topic":
@@ -794,7 +801,7 @@ async def series_pack(c:CallbackQuery):
         log.exception("Series pack failed"); return await wait.edit_text(f"⚠️ Создано {len(created)}/3. Ошибка: {html.escape(str(exc)[:240])}",parse_mode=ParseMode.HTML)
     pack=",".join(str(x) for x in created)
     await wait.edit_text(f"✅ <b>Сезон готов</b>\n\nЧерновики: {', '.join('#'+str(x) for x in created)}\nКаждый выпуск пришёл отдельной карточкой",parse_mode=ParseMode.HTML,
-      reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📅 Расставить на 3 дня",callback_data=f"schedulepack:{pack}")]]))
+      reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◷ Расставить на 3 дня",callback_data=f"schedulepack:{pack}")]]))
     for draft_id in created: await review(draft_id)
 
 @router.callback_query(F.data.startswith("schedulepack:"))
@@ -838,8 +845,8 @@ def schedule_keyboard(draft_id):
         moment=(now+timedelta(days=day_offset)).replace(hour=hour,minute=minute,second=0,microsecond=0)
         if moment>now: slots.append((label,moment))
     rows=[[InlineKeyboardButton(text=label,callback_data=f"at:{draft_id}:{int(moment.timestamp())}")] for label,moment in slots[:5]]
-    rows.append([InlineKeyboardButton(text="✍️ Своя дата и время",callback_data=f"customat:{draft_id}")])
-    rows.append([InlineKeyboardButton(text="↩️ Назад",callback_data=f"back:{draft_id}")])
+    rows.append([InlineKeyboardButton(text="＋ Своя дата и время",callback_data=f"customat:{draft_id}")])
+    rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"back:{draft_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.callback_query(F.data.startswith("schedule:"))
@@ -853,7 +860,7 @@ async def schedule_at(c:CallbackQuery):
     _,raw_id,raw_ts=c.data.split(":"); draft_id=int(raw_id); when=datetime.fromtimestamp(int(raw_ts),settings.timezone)
     if when<=datetime.now(settings.timezone): return await c.answer("Этот слот уже прошёл",show_alert=True)
     db.update(draft_id,status="scheduled",scheduled_at=when.isoformat())
-    await c.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Отменить публикацию",callback_data=f"unschedule:{draft_id}")]]))
+    await c.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="× Отменить публикацию",callback_data=f"unschedule:{draft_id}")]]))
     await c.answer(f"Поставлено на {when:%d.%m %H:%M}",show_alert=True)
 
 @router.callback_query(F.data.startswith("customat:"))
@@ -872,7 +879,7 @@ async def custom_schedule_value(message:Message,state:FSMContext):
         return await message.answer("Не понял время. Пример: <code>03.09 14:35</code>",parse_mode=ParseMode.HTML)
     data=await state.get_data(); db.update(data["draft_id"],status="scheduled",scheduled_at=value.isoformat()); await state.clear()
     await message.answer(f"⏰ Пост #{data['draft_id']} поставлен на {value:%d.%m в %H:%M}.",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-      InlineKeyboardButton(text="❌ Отменить публикацию",callback_data=f"unschedule:{data['draft_id']}")]]))
+      InlineKeyboardButton(text="× Отменить публикацию",callback_data=f"unschedule:{data['draft_id']}")]]))
 
 @router.message(Command("scheduled"))
 async def scheduled_posts(message:Message):
@@ -941,7 +948,7 @@ async def panel_games(c:CallbackQuery):
     rows=fixtures_keyboard_rows(fixtures)
     if not rows: return await wait.edit_text("Сегодня в выбранных турнирах матчей не найдено.",reply_markup=admin_nav("panel:football"))
     buttons=[[InlineKeyboardButton(text=label,callback_data=f"gamepost:{fixture_id}")] for label,fixture_id in rows]
-    buttons.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    buttons.append([InlineKeyboardButton(text="‹ Назад",callback_data="panel:football"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     await wait.edit_text("⚽ <b>Какой матч вскрываем?</b>\n\nВозьму реальные события и статистику.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @router.callback_query(F.data=="panel:match")
@@ -976,7 +983,7 @@ async def panel_scheduled(c:CallbackQuery):
         when=datetime.fromisoformat(draft["scheduled_at"]).astimezone(settings.timezone)
         lines.append(f"\n#{draft['id']} · {CHANNELS[draft['channel_key']]['emoji']} {when:%d.%m %H:%M} · {html.escape(draft['format_key'])}")
         buttons.append([InlineKeyboardButton(text=f"❌ Отменить #{draft['id']} · {when:%d.%m %H:%M}",callback_data=f"unschedule:{draft['id']}")])
-    buttons.append([InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")])
+    buttons.append([InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
     await c.message.edit_text("".join(lines),parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @router.callback_query(F.data=="panel:sync")
@@ -993,9 +1000,9 @@ async def panel_sync(c:CallbackQuery):
 async def panel_analytics(c:CallbackQuery):
     if not admin(c): return
     await c.message.edit_text("📊 <b>Центр аналитики</b>\n\nПосты показывают, что удерживает аудиторию. Воронка — что превращает внимание в заявки",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-      [InlineKeyboardButton(text="📈 Обновить показатели постов",callback_data="panel:postmetrics")],
-      [InlineKeyboardButton(text="🎯 Воронка продаж",callback_data="panel:funnel")],
-      [InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]])); await c.answer()
+      [InlineKeyboardButton(text="↻ Обновить показатели постов",callback_data="panel:postmetrics")],
+      [InlineKeyboardButton(text="◎ Воронка продаж",callback_data="panel:funnel")],
+      [InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
 
 @router.callback_query(F.data=="panel:postmetrics")
 async def panel_post_metrics(c:CallbackQuery):
@@ -1031,11 +1038,11 @@ async def panel_courses(c:CallbackQuery,state:FSMContext):
     if not admin(c): return
     await state.clear()
     buttons=[
-      [InlineKeyboardButton(text="🔄 Загрузить новые уроки",callback_data="panel:coursesync")],
-      [InlineKeyboardButton(text="📦 Добавить файл или ZIP",callback_data="panel:coursefile")],
-      [InlineKeyboardButton(text="📊 Что загружено",callback_data="panel:coursestats")],
-      [InlineKeyboardButton(text="🎁 Пост для Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="⚽ Пост для Лиги",callback_data="coursemake:liga")],
-      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:system"),InlineKeyboardButton(text="🏠 Главное меню",callback_data="panel:home")]]
+      [InlineKeyboardButton(text="↻ Загрузить новые уроки",callback_data="panel:coursesync")],
+      [InlineKeyboardButton(text="＋ Добавить файл или ZIP",callback_data="panel:coursefile")],
+      [InlineKeyboardButton(text="▦ Что загружено",callback_data="panel:coursestats")],
+      [InlineKeyboardButton(text="◇ Пост для Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="◆ Пост для Лиги",callback_data="coursemake:liga")],
+      [InlineKeyboardButton(text="‹ Назад",callback_data="panel:system"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]]
     await c.message.edit_text("📚 <b>Course Intelligence</b>\n\nЧитает только каналы из COURSE_CHANNELS, извлекает идеи и никогда не указывает курс в посте",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)); await c.answer()
 
 @router.callback_query(F.data=="panel:coursestats")

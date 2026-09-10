@@ -108,10 +108,10 @@ def _growth_rows(db) -> list[dict]:
 
 
 def _plan_keyboard(actions: tuple[AutopilotAction,...]) -> InlineKeyboardMarkup:
-    icons={"gifts":"🎁","liga":"⚽","shorts":"▶","meme":"◉","post":"✦","challenge":"◎"}; rows=[]
+    icons={"gifts":"◇","liga":"◆","shorts":"▶","meme":"◉","post":"✦","challenge":"◎"}; rows=[]
     for index,action in enumerate(actions):
         rows.append([InlineKeyboardButton(text=f"{icons.get(action.project,'✦')}{icons.get(action.kind,'✦')} Создать · {action.title[:35]}",callback_data=f"v2:make:{index}")])
-    if actions: rows.append([InlineKeyboardButton(text="⚡ Создать весь план",callback_data="v2:makeall")])
+    if actions: rows.append([InlineKeyboardButton(text="✦ Создать весь план",callback_data="v2:makeall")])
     rows.append([InlineKeyboardButton(text="↻ Пересобрать план",callback_data="v2:today:refresh")]); rows.extend(section_nav())
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -203,15 +203,15 @@ def install(legacy):
     @router.callback_query(F.data=="v2:create")
     async def create_hub(c:CallbackQuery):
         if not legacy.admin(c): return
-        rows=[[InlineKeyboardButton(text="🎁 Gifts · пост",callback_data="gen:gifts"),InlineKeyboardButton(text="⚽ Liga · пост",callback_data="gen:liga")],
+        rows=[[InlineKeyboardButton(text="◇ Gifts · пост",callback_data="gen:gifts"),InlineKeyboardButton(text="◆ Liga · пост",callback_data="gen:liga")],
               [InlineKeyboardButton(text="◎ Рыночный срез",callback_data="panel:gifts"),InlineKeyboardButton(text="◉ Матч",callback_data="panel:games")],
-              [InlineKeyboardButton(text="◆ Из базы знаний",callback_data="v2:knowledge"),InlineKeyboardButton(text="⚡ План дня",callback_data="v2:today")],*section_nav()]
+              [InlineKeyboardButton(text="◆ Из базы знаний",callback_data="v2:knowledge"),InlineKeyboardButton(text="✦ План дня",callback_data="v2:today")],*section_nav()]
         await c.answer(); await c.message.edit_text("<b>＋ CREATE</b>\n\nВыбери результат. После создания материал автоматически пройдёт Director и получит визуальные варианты.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
     @router.callback_query(F.data=="v2:projects")
     async def projects(c:CallbackQuery):
         if not legacy.admin(c): return
-        rows=[[InlineKeyboardButton(text="🎁 Gifts Intelligence",callback_data="v2:project:gifts")],[InlineKeyboardButton(text="⚽ LigaProgress",callback_data="v2:project:liga")],
+        rows=[[InlineKeyboardButton(text="◇ Gifts Intelligence",callback_data="v2:project:gifts")],[InlineKeyboardButton(text="◆ LigaProgress",callback_data="v2:project:liga")],
               [InlineKeyboardButton(text="✦ AI Content Lab",callback_data="v2:project:services")],*section_nav()]
         await c.answer(); await c.message.edit_text("<b>◫ PROJECTS</b>\n\nТри продукта. Одна память, одна фабрика и одна аналитика — но разные Content DNA, офферы и цели.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
@@ -230,7 +230,7 @@ def install(legacy):
     @router.callback_query(F.data=="v2:studio")
     async def studio(c:CallbackQuery):
         if not legacy.admin(c): return
-        rows=[[InlineKeyboardButton(text="＋ Создать пост для Shorts",callback_data="v2:create")],[InlineKeyboardButton(text="🎙 Проверить worker",callback_data="panel:status")],*section_nav()]
+        rows=[[InlineKeyboardButton(text="＋ Создать пост для Shorts",callback_data="v2:create")],[InlineKeyboardButton(text="◉ Проверить worker",callback_data="panel:status")],*section_nav()]
         await c.answer(); await c.message.edit_text("<b>▶ SHORTS STUDIO</b>\n\n01  Сценарий\n02  Подтверждение\n03  Голос\n04  Сцены\n05  Субтитры\n06  Рендер\n\nПосле ролика можно отдельно заменить голос, кадры или субтитры. Своя MP3/голосовое поддерживаются.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
     @router.callback_query(F.data=="v2:knowledge")
@@ -245,7 +245,7 @@ def install(legacy):
                 if any(term in text for term in terms): areas[key]+=1
         area_text=" · ".join(f"{key} {count}" for key,count in areas.most_common()) or "таксономия появится после загрузки"
         buttons=[[InlineKeyboardButton(text="＋ Добавить материалы",callback_data="panel:coursefile"),InlineKeyboardButton(text="↻ Синхронизировать",callback_data="panel:coursesync")],
-                 [InlineKeyboardButton(text="🎁 Применить к Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="⚽ Применить к Liga",callback_data="coursemake:liga")],
+                 [InlineKeyboardButton(text="◇ Применить к Gifts",callback_data="coursemake:gifts"),InlineKeyboardButton(text="◆ Применить к Liga",callback_data="coursemake:liga")],
                  [InlineKeyboardButton(text="▦ Что загружено",callback_data="panel:coursestats")],*section_nav()]
         await c.answer(); await c.message.edit_text(f"<b>◆ KNOWLEDGE ENGINE</b>\n\nФрагментов: <b>{len(rows)}</b>\n{html.escape(area_text)}\n\nКурсы дают принципы, чеклисты и frameworks. Они не становятся рыночными фактами и не копируются в публикации.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 

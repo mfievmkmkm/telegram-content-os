@@ -25,3 +25,16 @@ def test_curated_pack_mapping_keeps_brand_symbols_and_first_style():
         SimpleNamespace(emoji="📉", custom_emoji_id="103"),
     ])
     assert custom_emoji_mapping((first, filler)) == {"💎": "101", "📉": "103"}
+
+
+def test_curated_pack_mapping_supports_editor_and_shop_ui():
+    ui_pack = SimpleNamespace(stickers=[
+        SimpleNamespace(emoji="🎬", custom_emoji_id="201"),
+        SimpleNamespace(emoji="📲", custom_emoji_id="202"),
+        SimpleNamespace(emoji="🤖", custom_emoji_id="203"),
+        SimpleNamespace(emoji="🏠", custom_emoji_id="204"),
+        SimpleNamespace(emoji="🛒", custom_emoji_id="205"),
+    ])
+    assert custom_emoji_mapping((ui_pack,)) == {
+        "🎬": "201", "📲": "202", "🤖": "203", "🏠": "204", "🛒": "205",
+    }
