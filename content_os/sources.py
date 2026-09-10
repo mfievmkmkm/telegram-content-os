@@ -29,6 +29,10 @@ SOURCE_REGISTRY = {
         {"url":google_news('Telegram collectible gifts TON'),"name":"Gifts RU","trust":3,"kind":"discovery"},
         {"url":google_news('Telegram Gifts marketplace TON NFT',"en","US"),"name":"Gifts EN","trust":3,"kind":"discovery"},
         {"url":google_news('site:ton.org Telegram Gifts'),"name":"TON","trust":5,"kind":"official"},
+        {"url":google_news('site:telegram.org/blog Stars Mini Apps creators monetization'),"name":"Telegram Economy","trust":5,"kind":"official"},
+        {"url":google_news('site:ton.org ecosystem creators mini apps digital identity'),"name":"TON Ecosystem","trust":5,"kind":"official"},
+        {"url":google_news('Telegram Mini Apps creator economy community digital collectibles',"en","US"),"name":"Digital Culture","trust":3,"kind":"discovery"},
+        {"url":google_news('Telegram scam phishing account security TON',"en","US"),"name":"Telegram Safety","trust":3,"kind":"security"},
         {"url":google_news('Portals Telegram Gifts marketplace'),"name":"Portals radar","trust":3,"kind":"market"},
         {"url":"https://github.com/GIFT-ASSET/gift_asset_api/releases.atom","name":"Gift Asset","trust":4,"kind":"github"},
         {"url":"https://github.com/bohd4nx/gifts-tracker/releases.atom","name":"Gifts Tracker","trust":4,"kind":"github"},
@@ -37,7 +41,7 @@ SOURCE_REGISTRY = {
 
 KEYWORDS = {
     "liga": ("игрок","футбол","тренер","матч","трениров","техник","тактик","player","football","soccer","coach","training","skill"),
-    "gifts": ("telegram","gift","подар","ton","collectible","fragment","portals","nft","market","floor","model","backdrop"),
+    "gifts": ("telegram","gift","подар","ton","collectible","stars","mini app","creator","community","digital","security","scam","phishing","design","market"),
 }
 HOOK_SIGNALS = ("почему","ошибка","секрет","запрет","никогда","впервые","против","сломал","потерял","вместо","how","why","mistake","first")
 

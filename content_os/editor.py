@@ -29,7 +29,10 @@ class Editor:
 
     async def material(self, channel_key, choice=None):
         fallback = choice.seed if choice else random.choice(CHANNELS[channel_key]["topics"])
-        if random.random() < .35: return {"title":fallback,"url":"","summary":""}
+        # Gifts is an editorial magazine, not a news scraper. Most slots must obey
+        # the deliberately broad lane; fresh market material has its own data slot.
+        editorial_share = .72 if channel_key == "gifts" else .35
+        if random.random() < editorial_share: return {"title":fallback,"url":"","summary":""}
         used = self.db.used_hashes(channel_key)
         for item in await asyncio.to_thread(collect_items, channel_key):
             if item["url"] and hashlib.sha256(item["url"].encode()).hexdigest() not in used: return item
@@ -76,9 +79,16 @@ class Editor:
         recent_topics=TopicRotation(self.db).recent(channel_key,12)
         exclusions=("\n\nПОСЛЕДНИЕ ТЕМЫ — нельзя повторять их главный конфликт, объект и вывод:\n- "+
                     "\n- ".join(_first[:180] for _first in recent_topics)) if recent_topics else ""
+        gifts_direction = (
+            " Для Gifts: строго следуй тематической оси. Необязательно упоминать Telegram Gifts — "
+            "связывай тему с ними только естественно. Пиши через понятную сцену, выбор или наблюдение. "
+            "Не складывай термины в список и не имитируй трейдера."
+            if channel_key == "gifts" else ""
+        )
         prompt = (f"Рубрика: {format_key}. ОБЯЗАТЕЛЬНАЯ новая тематическая ось: {lane}. Формат: {self.format_rule(format_key)} "
                   f"Создай оригинальный пост. Тема должна быть узнаваемо другой по объекту, конфликту и выводу. "
-                  f"Не своди каждый Gifts-пост к floor/FOMO и каждый футбольный пост к страху тренера.\n{facts}{exclusions}{style}{trends}{learned}")
+                  f"Не своди каждый Gifts-пост к рынку, цене, floor или FOMO и каждый футбольный пост к страху тренера."
+                  f"{gifts_direction}\n{facts}{exclusions}{style}{trends}{learned}")
         text = await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,prompt),"Сохрани заданную рубрику и объём.")
         score, reasons = score_hook(plain_text(text))
         if score < 3:

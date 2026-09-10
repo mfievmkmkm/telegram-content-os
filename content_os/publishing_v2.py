@@ -18,11 +18,11 @@ log = logging.getLogger("content-os.publish-v2")
 
 
 class PublishingService:
-    """Publish a reviewed draft without silently dropping its chosen visual.
+    """Publish a reviewed draft as one complete Telegram post.
 
-    Telegram captions are short. For long editorial posts the selected card is sent
-    as a visual opener and the full post follows as a text message. The text message
-    remains the analytics anchor (`published_message_id`).
+    A branded card and its copy must never be split into two channel messages. Old
+    drafts that no longer fit Telegram's caption limit are rejected before any
+    network side effect so an editor can shorten them deliberately.
     """
 
     def __init__(self, legacy, editorial_memory):
@@ -59,9 +59,23 @@ class PublishingService:
         premium_error = None
         sent = None
         mode = "bot"
-        text_len = len(plain_text(draft["text"]))
+        text_len = max(len(plain_text(rendered)), len(plain_text(bot_rendered)))
 
-        if card_bytes and text_len <= 1000 and not legacy.premium_publisher.ready:
+        if card_bytes and text_len > 1000:
+            raise RuntimeError(
+                "Текст не помещается в одну публикацию с карточкой. "
+                "Нажми «Короче» и опубликуй черновик снова"
+            )
+
+        if legacy.premium_publisher.ready:
+            try:
+                sent = await legacy.premium_publisher.send(channel, rendered, card_bytes)
+                mode = "premium"
+            except Exception as exc:
+                premium_error = f"{type(exc).__name__}: {str(exc)[:220]}"
+                log.exception("Premium publish failed; falling back to Bot API")
+
+        if sent is None and card_bytes:
             sent = await legacy.bot.send_photo(
                 channel,
                 BufferedInputFile(card_bytes, filename=f"{draft['channel_key']}-{draft_id}.png"),
@@ -69,40 +83,16 @@ class PublishingService:
                 parse_mode=ParseMode.HTML,
                 reply_markup=sales_markup,
             )
-        else:
-            # For long posts the visual is never sacrificed just because Telegram's
-            # media caption is too small. It becomes a clean editorial opener.
-            if card_bytes:
-                await legacy.bot.send_photo(
-                    channel,
-                    BufferedInputFile(card_bytes, filename=f"{draft['channel_key']}-{draft_id}.png"),
-                )
-            elif draft["channel_key"] != "gifts":
-                source_image = await legacy.discover_image(draft["source_url"] or "")
-                if source_image:
-                    try:
-                        await legacy.bot.send_photo(channel, source_image)
-                    except Exception:
-                        log.info("Source image unavailable during publish: %s", source_image)
-
-            if legacy.premium_publisher.ready:
-                try:
-                    # Text-only premium publish keeps custom emoji while the visual
-                    # stays independent of caption limits.
-                    sent = await legacy.premium_publisher.send(channel, rendered, None)
-                    mode = "premium"
-                except Exception as exc:
-                    premium_error = f"{type(exc).__name__}: {str(exc)[:220]}"
-                    log.exception("Premium publish failed; falling back to Bot API")
-            if sent is None:
-                sent = await legacy.bot.send_message(
-                    channel,
-                    bot_rendered,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=True,
-                    reply_markup=sales_markup,
-                )
-                mode = "bot"
+            mode = "bot"
+        elif sent is None:
+            sent = await legacy.bot.send_message(
+                channel,
+                bot_rendered,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=sales_markup,
+            )
+            mode = "bot"
 
         message_id = getattr(sent, "message_id", None) or getattr(sent, "id", None)
         if not message_id:

@@ -32,7 +32,9 @@ class ShortRenderClient:
                 async with session.get(self.settings.mpt_base_url + "/health") as response:
                     data = await response.json(content_type=None)
                     if response.status >= 400 or not data.get("ok"):
-                        return False, f"HTTP {response.status}"
+                        return False, self._endpoint_error(response.status, "/health")
+            if data.get("service") != "content-os-shorts":
+                return False, "MPT_BASE_URL ведёт не на Shorts Worker"
             providers = data.get("tts") or {}
             voice = ", ".join(key for key, ok in providers.items() if ok) or data.get("voice", "—")
             assets = ",".join(data.get("asset_types") or []) or "stock_video"
@@ -108,8 +110,18 @@ class ShortRenderClient:
         async with session.request(method, self.settings.mpt_base_url + path, **kwargs) as response:
             body = await response.text()
             if response.status >= 400:
-                raise RuntimeError(f"Shorts Worker HTTP {response.status}: {body[:240]}")
+                detail = self._endpoint_error(response.status, path)
+                raise RuntimeError(f"{detail}: {body[:180]}")
             return __import__("json").loads(body)
+
+    @staticmethod
+    def _endpoint_error(status: int, path: str) -> str:
+        if status == 404:
+            return (
+                f"Shorts Worker HTTP 404 на {path}. Проверь MPT_BASE_URL: нужен корневой "
+                "Railway-домен сервиса Shorts без /health, /api и пути; затем обнови его image"
+            )
+        return f"Shorts Worker HTTP {status} на {path}"
 
     @staticmethod
     def _data(response):
