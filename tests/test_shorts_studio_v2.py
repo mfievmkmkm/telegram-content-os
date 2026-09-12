@@ -52,6 +52,7 @@ def test_ui_is_review_first_and_readable():
     labels = [button.text for row in review_keyboard(7).inline_keyboard for button in row]
     assert "✅ В монтаж" in labels
     assert "✂️ Короче" in labels
+    assert "☠️ Грязный хук · 3 сек" in labels
     voice_labels = [button.text for row in voice_keyboard(7, "gifts").inline_keyboard for button in row]
     assert any("Lera" in label for label in voice_labels)
 

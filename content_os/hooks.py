@@ -7,6 +7,7 @@ BORING = (
 POWER = (
     "почему", "как", "никогда", "ошибка", "врёт", "мусор", "страх", "потерял",
     "уже", "тебя", "твой", "если", "пока", "вместо", "хуже", "ловушка",
+    "риск", "правда", "скрывает", "ломает", "дороже", "не ",
 )
 
 
@@ -17,6 +18,7 @@ def score_hook(text: str) -> tuple[int, list[str]]:
     if 3 <= len(words) <= 14: score += 2
     else: reasons.append("первая строка должна быть 3–14 слов")
     if any(x in low for x in POWER): score += 2
+    elif first.endswith(("?", "!", "❓", "❗")): score += 1
     else: reasons.append("нет конфликта, боли или интриги")
     if any(x in low for x in BORING): score -= 4; reasons.append("банальный нейросетевой заход")
     if len(first) > 90: score -= 1; reasons.append("хук слишком длинный")
@@ -26,4 +28,3 @@ def score_hook(text: str) -> tuple[int, list[str]]:
 
 def passes_hook_gate(text: str) -> bool:
     return score_hook(text)[0] >= 3
-

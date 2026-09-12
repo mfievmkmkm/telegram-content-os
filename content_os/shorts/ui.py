@@ -43,6 +43,7 @@ def review_keyboard(job_id: int | str) -> InlineKeyboardMarkup:
     key = str(job_id)
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ В монтаж", callback_data=f"shortsv2:approve:{key}")],
+        [InlineKeyboardButton(text="☠️ Грязный хук · 3 сек", callback_data=f"shortsv2:rewrite:dirty:{key}")],
         [
             InlineKeyboardButton(text="🔥 Жёстче", callback_data=f"shortsv2:rewrite:harder:{key}"),
             InlineKeyboardButton(text="😂 Мемнее", callback_data=f"shortsv2:rewrite:meme:{key}"),
@@ -103,5 +104,8 @@ def rendered_keyboard(job_id: int | str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="💬 Другие субтитры", callback_data=f"shortsv2:subtitles:{key}"),
             InlineKeyboardButton(text="✂️ Короче", callback_data=f"shortsv2:rewrite:short:{key}"),
         ],
-        [InlineKeyboardButton(text="🔥 Агрессивнее", callback_data=f"shortsv2:rewrite:harder:{key}")],
+        [
+            InlineKeyboardButton(text="🔥 Агрессивнее", callback_data=f"shortsv2:rewrite:harder:{key}"),
+            InlineKeyboardButton(text="☠️ Хук · 3 сек", callback_data=f"shortsv2:rewrite:dirty:{key}"),
+        ],
     ])

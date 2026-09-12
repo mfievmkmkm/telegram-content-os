@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import html
 import random
+import re
 
 import aiohttp
 from .channels import CHANNELS, FORMAT_ROTATION, FORMAT_RULES, POST_RULES
@@ -163,6 +164,22 @@ class Editor:
         text=await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,prompt,.88),"Сохрани редакторское задание и объём."); score,reasons=score_hook(plain_text(text))
         if score<3:
             text=await self.finish(cfg,await self.llm(cfg["voice"]+POST_RULES,f"Усиль хук. Проблемы: {', '.join(reasons)}. Факты не меняй.\n\n{text}",.95),"Сохрани редакторское задание и объём."); score,_=score_hook(plain_text(text))
-        if score<3: raise RuntimeError(f"Слабый хук {score}/5 — черновик отклонён, попробуй ещё раз")
+        if score<3:
+            # A weak first line is editable, not a reason to throw away a complete
+            # fact-safe draft and leave TODAY empty. Replace only the hook with a
+            # deterministic, topic-aware question; Director still checks the body.
+            text=self.rescue_hook(text,title,channel_key); score,_=score_hook(plain_text(text))
         text=decorate_post(text,channel_key); digest=hashlib.sha256(url.encode()).hexdigest() if url else None
         return self.db.save_draft(channel_key,format_key,text,score,title,url,digest)
+
+    @staticmethod
+    def rescue_hook(text,title,channel_key):
+        raw=plain_text(str(title or "")).strip()
+        subject=(raw.rsplit(":",1)[-1] if ":" in raw else raw).strip(" •—–-?!❓❗.")
+        subject=re.sub(r"^(как|почему|зачем|что)\s+","",subject,flags=re.I)
+        subject=" ".join(subject.split()[:7]).strip() or ("твой выбор" if channel_key=="gifts" else "этот эпизод")
+        hook=f"Почему {subject.lower()} работает не так, как кажется?"
+        lines=str(text or "").splitlines(); index=next((i for i,line in enumerate(lines) if plain_text(line).strip()),None)
+        if index is None: return hook
+        lines[index]=hook
+        return "\n".join(lines).strip()

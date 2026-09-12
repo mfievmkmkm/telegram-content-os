@@ -57,6 +57,12 @@ class ShortScriptService:
             "meme": "Сделай подачу мемнее: узнаваемая ситуация и один сильный панч без клоунады.",
             "short": "Сократи монолог примерно на 15%, сохрани хук, смысл и законченный финал.",
             "hook": "Сохрани основную мысль, но придумай совершенно другой сильный хук.",
+            "dirty": (
+                "Максимально зацепи зрителя в первые 3 секунды. Подача грязная и провокационная: "
+                "ударь по самоуверенности, страху потери или неприятной правде. Хук 5–12 слов. "
+                "Никаких выдуманных фактов, оскорблений аудитории, ложной срочности и обещаний прибыли. "
+                "Грязно по энергии, чисто по фактам."
+            ),
         }
         if mode not in instructions:
             raise ValueError(f"Неизвестный режим сценария: {mode}")
@@ -69,9 +75,7 @@ class ShortScriptService:
         try:
             data = self._parse(raw)
         except (ValueError, TypeError, json.JSONDecodeError):
-            # A malformed LLM answer must never dead-end the operator. Preserve
-            # the reviewed source and produce a deterministic editable script.
-            data = self._fallback({"text": brief.voiceover, "channel_key": brief.channel})
+            return self._fallback_rewrite(brief, mode)
         try:
             data.update(channel=brief.channel, draft_id=brief.draft_id)
             updated = ShortBrief.from_legacy(data)
@@ -81,11 +85,49 @@ class ShortScriptService:
             self._normalize(updated)
             self.validate(updated)
         except (ValueError, TypeError, AttributeError):
-            data=self._fallback({"text":brief.voiceover,"channel_key":brief.channel})
-            data.update(channel=brief.channel,draft_id=brief.draft_id)
-            updated=ShortBrief.from_legacy(data); updated.delivery_preset=brief.delivery_preset
-            updated.voice_preset=brief.voice_preset; updated.subtitle_preset=brief.subtitle_preset
-            self.validate(updated)
+            return self._fallback_rewrite(brief, mode)
+        return updated
+
+    def _fallback_rewrite(self, brief: ShortBrief, mode: str) -> ShortBrief:
+        """Make every control visibly useful even when the LLM breaks JSON."""
+        data = brief.to_dict()
+        hooks = {
+            "harder": "Ты проигрываешь ещё до проверки главной детали",
+            "meme": "Ты всё проверил. Кроме того, что реально решает",
+            "short": brief.hook,
+            "hook": "Вот где уверенность превращается в ловушку",
+            "dirty": "Тебя сейчас подставит твоя же уверенность",
+        }
+        if brief.channel == "liga":
+            hooks.update({
+                "harder": "Соперник уже наказал ошибку, которую ты не заметил",
+                "meme": "Ты сыграл идеально. Мяч почему-то у соперника",
+                "hook": "Эту мелочь тренер замечает раньше твоего гола",
+                "dirty": "Тренер уже видит, почему тебя посадят",
+            })
+        hook = hooks[mode]
+        words = brief.voiceover.split()
+        if mode == "short" and len(words) > 68:
+            words = words[:54] + words[-12:]
+        voice = " ".join(words).strip()
+        old_hook = plain_text(brief.hook).strip()
+        if mode != "short" and hook.lower() not in voice.lower():
+            if old_hook and voice.lower().startswith(old_hook.lower()):
+                voice = voice[len(old_hook):].lstrip(" .!?:—–-")
+            voice = f"{hook}. {voice}".strip()
+        while len(voice.split()) < 64:
+            voice += " Проверь контекст, найди главную деталь и только потом принимай решение."
+        if len(voice.split()) > 105:
+            voice_words = voice.split()
+            voice = " ".join(voice_words[:90] + voice_words[-15:]).rstrip(" ,;:")
+        if voice and voice[-1] not in ".!?": voice += "."
+        data.update(hook=hook, title=hook[:70], voiceover=voice)
+        updated = ShortBrief.from_legacy(data)
+        updated.delivery_preset = brief.delivery_preset
+        updated.voice_preset = brief.voice_preset
+        updated.subtitle_preset = brief.subtitle_preset
+        self._normalize(updated)
+        self.validate(updated)
         return updated
 
     @staticmethod

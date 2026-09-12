@@ -1,3 +1,5 @@
+import asyncio
+
 from content_os.shorts.models import ShortBrief, ShortScene, ShortStage
 from content_os.shorts.presets import delivery, voice
 from content_os.shorts.script import ShortScriptService
@@ -47,3 +49,16 @@ def test_script_validation_accepts_complete_brief():
     ShortScriptService.validate(brief)
     assert brief.duration == 32
     assert brief.word_count == 80
+
+
+class BrokenEditor:
+    async def llm(self, system, prompt, temperature): return "not json"
+
+
+def test_dirty_hook_button_has_a_distinct_safe_fallback():
+    original=sample_brief()
+    changed=asyncio.run(ShortScriptService(BrokenEditor()).rewrite(original,"dirty"))
+    assert changed.hook != original.hook
+    assert len(changed.hook.split()) <= 12
+    assert 64 <= changed.word_count <= 105
+    assert changed.voiceover.endswith(tuple(".!?"))

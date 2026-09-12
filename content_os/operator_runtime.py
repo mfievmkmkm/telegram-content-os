@@ -94,6 +94,21 @@ def _load_actions(db) -> list[dict]:
     except (TypeError,ValueError,json.JSONDecodeError): return []
 
 
+def _draft_picker(db, callback_prefix: str, back: str = "v2:studio", limit: int = 8) -> InlineKeyboardMarkup:
+    drafts=[]
+    for project in ("gifts","liga"):
+        try: drafts.extend(list(db.recent_drafts(project,limit)))
+        except Exception: continue
+    drafts.sort(key=lambda row:int(_value(row,"id",0) or 0),reverse=True)
+    rows=[]
+    for draft in drafts[:limit]:
+        draft_id=str(_value(draft,"id")); channel=str(_value(draft,"channel_key")).upper()
+        title=_first_line(_value(draft,"text"),38) or f"Пост {draft_id}"
+        rows.append([InlineKeyboardButton(text=f"{channel} · {title}",callback_data=f"{callback_prefix}:{draft_id}")])
+    rows.extend(section_nav(back))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _growth_rows(db) -> list[dict]:
     try: metrics=list(db.analytics_summary(500))
     except Exception: metrics=[]
@@ -190,15 +205,21 @@ def install(legacy):
         if not legacy.admin(c): return
         actions=_load_actions(legacy.db)
         if not actions: return await c.answer("Сначала собери план",show_alert=True)
-        await c.answer("Запускаю фабрику…"); status=await c.message.answer(f"⚡ <b>CONTENT FACTORY · 0/{len(actions)}</b>",parse_mode=ParseMode.HTML); made=[]; errors=[]
+        await c.answer("Запускаю фабрику…"); status=await c.message.answer(f"⚡ <b>CONTENT FACTORY · 0/{len(actions)}</b>",parse_mode=ParseMode.HTML); made=[]; errors=[]; failed=[]
         for index,action in enumerate(actions,1):
             try: made.append(await _create_action(legacy,action))
-            except Exception as exc: errors.append(f"{action.get('title','тема')[:35]}: {str(exc)[:80]}")
+            except Exception as exc:
+                errors.append(f"{action.get('title','тема')[:35]}: {str(exc)[:80]}"); failed.append(action)
             await status.edit_text(f"⚡ <b>CONTENT FACTORY · {index}/{len(actions)}</b>\n\nГотово: {len(made)} · остановлено: {len(errors)}",parse_mode=ParseMode.HTML)
         for draft_id in made: await legacy.review(draft_id)
+        legacy.db.set(PLAN_KEY,json.dumps(failed,ensure_ascii=False))
         summary=f"✓ Передано Director: {len(made)}\n✕ Остановлено: {len(errors)}"
         if errors: summary+="\n\n"+"\n".join(f"• {html.escape(x)}" for x in errors[:5])
-        await status.edit_text(f"<b>CONTENT FACTORY ЗАВЕРШЕНА</b>\n\n{summary}",parse_mode=ParseMode.HTML,reply_markup=home_nav())
+        controls=InlineKeyboardMarkup(inline_keyboard=(
+            [[InlineKeyboardButton(text=f"↻ Повторить остановленные · {len(failed)}",callback_data="v2:makeall")],*section_nav()]
+            if failed else section_nav()
+        ))
+        await status.edit_text(f"<b>CONTENT FACTORY ЗАВЕРШЕНА</b>\n\n{summary}",parse_mode=ParseMode.HTML,reply_markup=controls)
 
     @router.callback_query(F.data=="v2:create")
     async def create_hub(c:CallbackQuery):
@@ -230,8 +251,52 @@ def install(legacy):
     @router.callback_query(F.data=="v2:studio")
     async def studio(c:CallbackQuery):
         if not legacy.admin(c): return
-        rows=[[InlineKeyboardButton(text="＋ Создать пост для Shorts",callback_data="v2:create")],[InlineKeyboardButton(text="◉ Проверить worker",callback_data="panel:status")],*section_nav()]
+        rows=[
+            [InlineKeyboardButton(text="🎬 Новый Shorts",callback_data="v2:shorts"),InlineKeyboardButton(text="♻️ Remix поста",callback_data="v2:remix")],
+            [InlineKeyboardButton(text="🎨 Карточки",callback_data="v2:cards"),InlineKeyboardButton(text="😂 Мем",callback_data="v2:memes")],
+            [InlineKeyboardButton(text="◉ Проверить worker",callback_data="panel:status")],
+            *section_nav(),
+        ]
         await c.answer(); await c.message.edit_text("<b>▶ SHORTS STUDIO</b>\n\n01  Сценарий\n02  Подтверждение\n03  Голос\n04  Сцены\n05  Субтитры\n06  Рендер\n\nПосле ролика можно отдельно заменить голос, кадры или субтитры. Своя MP3/голосовое поддерживаются.",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+    @router.callback_query(F.data=="v2:shorts")
+    async def studio_shorts(c:CallbackQuery):
+        if not legacy.admin(c): return
+        await c.answer(); await c.message.edit_text(
+            "<b>🎬 НОВЫЙ SHORTS</b>\n\nСначала создай пост или выбери готовый черновик. Сценарий, голос, кадры и субтитры меняются независимо до монтажа.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=_draft_picker(legacy.db,"shortsv2:start"),
+        )
+
+    @router.callback_query(F.data=="v2:remix")
+    async def studio_remix(c:CallbackQuery):
+        if not legacy.admin(c): return
+        await c.answer(); await c.message.edit_text(
+            "<b>♻️ CONTENT REMIX</b>\n\nВыбери исходник. Получишь большой и короткий пост, мем, опрос, Shorts и продажный мост.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=_draft_picker(legacy.db,"remixv2:start"),
+        )
+
+    @router.callback_query(F.data=="v2:cards")
+    async def studio_cards(c:CallbackQuery):
+        if not legacy.admin(c): return
+        await c.answer(); await c.message.edit_text(
+            "<b>🎨 VISUAL DIRECTOR</b>\n\nВыбери пост — соберу три новые 3D-композиции.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=_draft_picker(legacy.db,"visualv2:options"),
+        )
+
+    @router.callback_query(F.data=="v2:memes")
+    async def studio_memes(c:CallbackQuery):
+        if not legacy.admin(c): return
+        rows=[
+            [InlineKeyboardButton(text="◇ Мем · Gifts",callback_data="gen:gifts"),InlineKeyboardButton(text="◆ Мем · Liga",callback_data="gen:liga")],
+            *section_nav("v2:studio"),
+        ]
+        await c.answer(); await c.message.edit_text(
+            "<b>😂 MEME LAB</b>\n\nВыбери проект, затем «Напишу тему» и рубрику «Мем». Так панч остаётся управляемым, а факты — безопасными.",
+            parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        )
 
     @router.callback_query(F.data=="v2:knowledge")
     async def knowledge(c:CallbackQuery):

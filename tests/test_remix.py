@@ -19,6 +19,22 @@ class FakeEditor:
         }, ensure_ascii=False)
 
 
+class AliasEditor:
+    async def llm(self, system, prompt, temperature):
+        return json.dumps({
+            "long_post":"Полный разбор идеи с конфликтом, объяснением и понятным действием для читателя.",
+            "short_post":"Короткая версия с другим углом и самостоятельной мыслью.",
+            "meme_text":"Я всё проверил. Проверку решил не проверять.",
+            "poll":{"question":"Что ломает решение?","options":["Спешка","Самоуверенность"]},
+            "video_script":"Это сценарий ролика, который модель почему-то назвала иначе, но его нельзя выбрасывать из-за имени поля.",
+            "cta":"Сохрани разбор и проверь свой выбор ещё раз.",
+        },ensure_ascii=False)
+
+
+class BrokenEditor:
+    async def llm(self, system, prompt, temperature): return "совсем не json"
+
+
 def test_remix_parses_distinct_bundle():
     bundle=asyncio.run(RemixService(FakeEditor()).create("gifts","Это достаточно длинная исходная идея про ошибку оценки объекта и порядок проверки деталей перед решением."))
     assert len(bundle.poll_options)==3
@@ -38,3 +54,16 @@ def test_remix_rejects_bad_poll():
     })
     with pytest.raises(ValueError,match="2–4"):
         RemixService.parse(bad)
+
+
+def test_remix_accepts_common_model_aliases():
+    bundle=asyncio.run(RemixService(AliasEditor()).create("gifts","Исходная идея достаточно длинная, чтобы собрать из неё несколько самостоятельных форматов без выдуманных фактов."))
+    assert "сценарий" in bundle.shorts_script.lower()
+    assert bundle.poll_options == ("Спешка","Самоуверенность")
+
+
+def test_remix_never_dead_ends_after_two_broken_answers():
+    bundle=asyncio.run(RemixService(BrokenEditor()).create("liga","Игрок дважды не посмотрел через плечо перед приёмом мяча и потерял возможность продолжить атаку."))
+    assert len(bundle.poll_options) >= 2
+    assert 64 <= len(bundle.shorts_script.split()) <= 105
+    assert bundle.sales_bridge
