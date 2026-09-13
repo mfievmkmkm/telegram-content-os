@@ -5,6 +5,27 @@ from telethon.sessions import StringSession
 from telethon.tl.types import MessageEntityCustomEmoji
 
 CUSTOM=re.compile(r'<tg-emoji emoji-id="(\d+)">([^<]+)</tg-emoji>')
+PLAIN_EMOJI=re.compile(
+    "[\U0001F1E6-\U0001F1FF\U0001F300-\U0001FAFF\u2600-\u27BF]"
+    "[\uFE0F\u200D\U0001F3FB-\U0001F3FF]*"
+)
+
+
+def require_custom_emoji_markup(value):
+    """Reject plain/missing emoji before opening an MTProto connection."""
+    tags=CUSTOM.findall(value or "")
+    if not tags:
+        raise RuntimeError(
+            "В посте нет фирменного Premium emoji. Установи единый набор командой /emojipack all"
+        )
+    without_custom=CUSTOM.sub("",value or "")
+    if PLAIN_EMOJI.search(without_custom):
+        raise RuntimeError(
+            "В посте остался обычный emoji. Публикация остановлена, чтобы не ломать фирменный стиль"
+        )
+    if len(tags)>3:
+        raise RuntimeError("В посте больше трёх Premium emoji")
+    return len(tags)
 
 def parse_entities(value):
     custom=[]
@@ -37,7 +58,14 @@ class PremiumPublisher:
         except Exception as exc: return False,f"{type(exc).__name__}: {str(exc)[:160]}"
         finally: await client.disconnect()
     async def send(self,channel,html_text,image=None):
-        text,entities=parse_entities(html_text); client=TelegramClient(StringSession(self.settings.telegram_session),self.settings.telegram_api_id,self.settings.telegram_api_hash)
+        if not self.ready:
+            raise RuntimeError("Premium MTProto не настроен")
+        expected=require_custom_emoji_markup(html_text)
+        text,entities=parse_entities(html_text)
+        actual=sum(isinstance(item,MessageEntityCustomEmoji) for item in entities)
+        if actual!=expected:
+            raise RuntimeError("Не удалось собрать Premium emoji entities")
+        client=TelegramClient(StringSession(self.settings.telegram_session),self.settings.telegram_api_id,self.settings.telegram_api_hash)
         await client.connect()
         try:
             if not await client.is_user_authorized(): raise RuntimeError("MTProto session is not authorized")

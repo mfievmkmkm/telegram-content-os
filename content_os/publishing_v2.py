@@ -4,13 +4,11 @@ import html
 import logging
 from datetime import datetime
 
-from aiogram.enums import ParseMode
-from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
-
 from .campaigns import CampaignRef
 from .content_quality import build_fingerprint
-from .formatting import plain_text, telegram_html
+from .formatting import plain_text
 from .growth.cta import telegram_deep_link
+from .mtproto_publish import require_custom_emoji_markup
 from .visual_renderer import render_card
 
 
@@ -35,10 +33,15 @@ class PublishingService:
         draft = self.db.draft(int(draft_id))
         if not draft:
             raise KeyError(f"Draft {draft_id} not found")
+        if not legacy.premium_publisher.ready:
+            raise RuntimeError(
+                "Premium Publish обязателен. Проверь PUBLISH_VIA_MTPROTO, TELEGRAM_API_ID, "
+                "TELEGRAM_API_HASH и TELEGRAM_SESSION_STRING"
+            )
         channel = legacy.settings.channels[draft["channel_key"]]
-        sales_markup, sales_link = await self._sales_cta(draft)
+        _, sales_link = await self._sales_cta(draft)
         rendered = legacy.render(draft["channel_key"], draft["text"]) + (sales_link or "")
-        bot_rendered = telegram_html(draft["text"]) + (sales_link or "")
+        require_custom_emoji_markup(rendered)
 
         selected = self.memory.selected_variant(draft_id)
         wants_card = selected is not None or (
@@ -56,10 +59,7 @@ class PublishingService:
             except Exception:
                 log.exception("Could not render selected card for draft %s", draft_id)
 
-        premium_error = None
-        sent = None
-        mode = "bot"
-        text_len = max(len(plain_text(rendered)), len(plain_text(bot_rendered)))
+        text_len = len(plain_text(rendered))
 
         if card_bytes and text_len > 1000:
             raise RuntimeError(
@@ -67,32 +67,13 @@ class PublishingService:
                 "Нажми «Короче» и опубликуй черновик снова"
             )
 
-        if legacy.premium_publisher.ready:
-            try:
-                sent = await legacy.premium_publisher.send(channel, rendered, card_bytes)
-                mode = "premium"
-            except Exception as exc:
-                premium_error = f"{type(exc).__name__}: {str(exc)[:220]}"
-                log.exception("Premium publish failed; falling back to Bot API")
-
-        if sent is None and card_bytes:
-            sent = await legacy.bot.send_photo(
-                channel,
-                BufferedInputFile(card_bytes, filename=f"{draft['channel_key']}-{draft_id}.png"),
-                caption=bot_rendered,
-                parse_mode=ParseMode.HTML,
-                reply_markup=sales_markup,
-            )
-            mode = "bot"
-        elif sent is None:
-            sent = await legacy.bot.send_message(
-                channel,
-                bot_rendered,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
-                reply_markup=sales_markup,
-            )
-            mode = "bot"
+        try:
+            sent = await legacy.premium_publisher.send(channel, rendered, card_bytes)
+        except Exception as exc:
+            log.exception("Premium publish failed; publication aborted")
+            raise RuntimeError(
+                f"Premium Publish не сработал; пост не опубликован: {type(exc).__name__}: {str(exc)[:220]}"
+            ) from exc
 
         message_id = getattr(sent, "message_id", None) or getattr(sent, "id", None)
         if not message_id:
@@ -111,7 +92,7 @@ class PublishingService:
             visual_type=f"card_v{selected}" if card_bytes and selected is not None else "card" if card_bytes else "source_or_text",
         )
         self.memory.remember_content(draft["channel_key"], fingerprint, draft["text"], draft_id=draft["id"])
-        return mode, premium_error
+        return "premium", None
 
     async def _sales_cta(self, draft):
         legacy = self.legacy
@@ -138,9 +119,7 @@ class PublishingService:
             slug = "service_liga" if draft["channel_key"] == "liga" else "service_gifts"
             sales_url = f"https://t.me/{me.username}?start={slug}"
 
-        if legacy.premium_publisher.ready:
-            return None, f'\n\n<a href="{sales_url}"><b>{html.escape(label)} →</b></a>'
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label, url=sales_url)]]), None
+        return None, f'\n\n<a href="{sales_url}"><b>{html.escape(label)} →</b></a>'
 
 
 def install_publishing(legacy, editorial_memory):

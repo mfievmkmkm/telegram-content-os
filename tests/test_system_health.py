@@ -6,7 +6,7 @@ def env():
         "BOT_TOKEN":"x","LLM_API_KEY":"x","LIGA_CHANNEL_ID":"x","GIFTS_CHANNEL_ID":"x",
         "SUPABASE_URL":"x","SUPABASE_KEY":"x","MPT_BASE_URL":"x","MPT_API_KEY":"x",
         "SHORTS_API_KEY":"x","PEXELS_API_KEY":"x","YANDEX_SPEECHKIT_API_KEY":"x","YANDEX_CLOUD_FOLDER_ID":"x",
-        "PUBLISH_VIA_MTPROTO":"false",
+        "PUBLISH_VIA_MTPROTO":"true","TELEGRAM_API_ID":"1","TELEGRAM_API_HASH":"h","TELEGRAM_SESSION_STRING":"s",
     }
 
 
@@ -29,6 +29,12 @@ def test_optional_systems_are_not_release_blockers():
     assert statuses["shop"].ready
     assert statuses["matchlens"].ready
     assert statuses["premium_publish"].ready
+
+
+def test_premium_publish_is_a_release_blocker_when_disabled():
+    data=env(); data["PUBLISH_VIA_MTPROTO"]="false"
+    blocked={item.key:item for item in blocking_subsystems(data)}
+    assert "premium_publish" in blocked
 
 
 def test_railway_public_url_enables_miniapp_without_manual_port():

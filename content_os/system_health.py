@@ -36,7 +36,7 @@ def subsystem_statuses(env: Mapping[str, str]) -> tuple[SubsystemStatus, ...]:
     if mtproto_enabled:
         statuses.append(_status("premium_publish", "Premium publish", env, ("TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING")))
     else:
-        statuses.append(SubsystemStatus("premium_publish", "Premium publish", True, (), "выключен; Bot API остаётся fallback"))
+        statuses.append(SubsystemStatus("premium_publish", "Premium publish", False, ("PUBLISH_VIA_MTPROTO=true",), ""))
 
     if str(env.get("MATCHLENS_BASE_URL", "")).strip():
         statuses.append(_status("matchlens", "MatchLens", env, ("MATCHLENS_BASE_URL", "MATCHLENS_API_KEY"), "experimental"))
@@ -52,4 +52,4 @@ def subsystem_statuses(env: Mapping[str, str]) -> tuple[SubsystemStatus, ...]:
 
 
 def blocking_subsystems(env: Mapping[str, str]) -> tuple[SubsystemStatus, ...]:
-    return tuple(item for item in subsystem_statuses(env) if not item.ready and item.key in {"editor", "database", "shorts_editor", "shorts_worker"})
+    return tuple(item for item in subsystem_statuses(env) if not item.ready and item.key in {"editor", "database", "shorts_editor", "shorts_worker", "premium_publish"})

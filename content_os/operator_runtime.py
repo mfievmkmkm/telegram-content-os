@@ -385,11 +385,12 @@ def install(legacy):
             "matchlens":SubsystemStatus("matchlens","MatchLens",match_ready,(),match_detail),
         }
         statuses=[replacements.get(item.key,item) for item in statuses]
+        system_ready=gate.ready and all(item.ready for item in statuses if item.key in {"editor","database","shorts_editor","shorts_worker","premium_publish"})
         for item in statuses:
             icon="●" if item.ready else "○"; detail=item.warning or ("нужно: "+", ".join(item.missing) if item.missing else "готов")
             rows.append(f"{icon} <b>{html.escape(item.title)}</b>  <i>{html.escape(detail)}</i>")
         warnings="\n".join(f"• {html.escape(item)}" for item in gate.warnings) or "нет"
-        text=f"<b>⚙ SYSTEM  /  {'READY' if gate.ready else 'SETUP'}</b>\n\n"+"\n".join(rows)+f"\n\n<b>Предупреждения</b>\n{warnings}\n\n<i>Значения секретов никогда не показываются</i>"
+        text=f"<b>⚙ SYSTEM  /  {'READY' if system_ready else 'SETUP'}</b>\n\n"+"\n".join(rows)+f"\n\n<b>Предупреждения</b>\n{warnings}\n\n<i>Значения секретов никогда не показываются</i>"
         await c.answer(); await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=home_nav())
 
     legacy.dp.include_router(router); return router

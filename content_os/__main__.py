@@ -24,7 +24,7 @@ from .history import HistoryImporter
 from .gifts_data import GiftsDataDesk
 from .analytics import AnalyticsCollector
 from .video import VideoFactory
-from .formatting import plain_text, telegram_html
+from .formatting import decorate_post, plain_text, telegram_html
 from .course_files import course_chunks, extract_course_files
 from .media import discover_image
 from .matchlens import MatchLensClient, MatchRequest, aggregate_passport, confidence_legend
@@ -33,8 +33,8 @@ from .shop import OFFERS, category_keyboard, offer_keyboard, shop_nav, storefron
 from .shop_runtime import create_shop_runtime
 from .funnel import summarize_funnel
 from .brand_cards import gift_card, liga_card, use_gift_card, use_liga_card
-from .mtproto_publish import PremiumPublisher
-from .premium_emoji import RECOMMENDED_PACKS, custom_emoji_mapping, semantic_custom_emojis
+from .mtproto_publish import PremiumPublisher, require_custom_emoji_markup
+from .premium_emoji import RECOMMENDED_PACKS, custom_emoji_mapping, missing_brand_anchors, semantic_custom_emojis
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -85,10 +85,11 @@ def track(user_id,event_type,source="",offer_key=""):
     except Exception: log.info("Funnel schema is not deployed yet")
 
 def render(channel_key,text):
+    styled=decorate_post(text,channel_key)
     raw=db.get(f"premium_emojis:{channel_key}") or "{}"
     try: custom=json.loads(raw)
     except (TypeError,json.JSONDecodeError): custom={}
-    return telegram_html(text,semantic_custom_emojis(text,channel_key,custom,3))
+    return telegram_html(styled,semantic_custom_emojis(styled,channel_key,custom,2))
 
 def render_ui(text):
     """Render the admin/shop message surface with one coherent custom-emoji pack."""
@@ -98,11 +99,18 @@ def render_ui(text):
     return telegram_html(text,custom)
 
 async def premium_health():
-    if not premium_publisher.ready: return "Bot API: переменные Premium-публикации не заполнены"
+    if not premium_publisher.ready: return "❌ Premium обязателен: переменные MTProto не заполнены"
     lines=[]
     for key in ("liga","gifts"):
+        raw=db.get(f"premium_emojis:{key}") or "{}"
+        try: custom=json.loads(raw)
+        except (TypeError,json.JSONDecodeError): custom={}
+        missing=missing_brand_anchors(key,custom)
+        if missing:
+            lines.append(f"❌ {key}: нет фирменных emoji {' '.join(missing)} · запусти /emojipack all")
+            continue
         ok,detail=await premium_publisher.probe(settings.channels[key])
-        lines.append(f"{'✅' if ok else '❌'} {key}: {detail}")
+        lines.append(f"{'✅' if ok else '❌'} {key}: {detail} · 2/2 Premium emoji")
     return "\n".join(lines)
 
 def shop_health():
@@ -173,43 +181,31 @@ async def generate(channel_key):
 
 async def publish(draft_id):
     draft=db.draft(draft_id); channel=settings.channels[draft["channel_key"]]
-    sales_markup=None
+    if not premium_publisher.ready:
+        raise RuntimeError("Premium Publish обязателен. Проверь MTProto-переменные Railway")
     sales_link=None
     if settings.shop_cta_every and int(draft_id)%settings.shop_cta_every==0:
         me=await (shop_bot or bot).get_me(); slug="service_liga" if draft["channel_key"]=="liga" else "service_gifts"
         label="Разобрать мой эпизод" if draft["channel_key"]=="liga" else "Проверить мой Gift"
         sales_url=f"https://t.me/{me.username}?start={slug}"
-        if premium_publisher.ready:
-            sales_link=f'\n\n<a href="{sales_url}"><b>{label} →</b></a>'
-        else:
-            sales_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label,url=sales_url)]])
+        sales_link=f'\n\n<a href="{sales_url}"><b>{label} →</b></a>'
     rendered=render(draft["channel_key"],draft["text"])+(sales_link or "")
-    bot_rendered=telegram_html(draft["text"])+(sales_link or "")
+    require_custom_emoji_markup(rendered)
     wants_card=(draft["channel_key"]=="gifts" and use_gift_card(draft_id)) or (draft["channel_key"]=="liga" and use_liga_card(draft_id))
     # A card and its copy are one editorial unit. Never split them in the channel.
     card=gift_card if draft["channel_key"]=="gifts" else liga_card
-    text_len=max(len(plain_text(rendered)),len(plain_text(bot_rendered)))
+    text_len=len(plain_text(rendered))
     if wants_card and text_len>1000:
         raise RuntimeError("Текст не помещается в одну публикацию с карточкой. Нажми «Короче» и опубликуй черновик снова")
     image=card(draft["text"],draft["format_key"]) if wants_card else None
-    premium_error=None
-    if premium_publisher.ready:
-        try:
-            sent=await premium_publisher.send(channel,rendered,image)
-            mode="premium"
-        except Exception as exc:
-            premium_error=f"{type(exc).__name__}: {str(exc)[:220]}"; log.exception("Premium publish failed; falling back to Bot API")
-            sent=None
-    else: sent=None
-    if sent is None and image:
-        card_file=BufferedInputFile(image,filename=f"{draft['channel_key']}-{draft_id}.png")
-        sent=await bot.send_photo(channel,card_file,caption=bot_rendered,parse_mode=ParseMode.HTML,reply_markup=sales_markup); mode="bot"
-    elif sent is None:
-        sent=await bot.send_message(channel,bot_rendered,parse_mode=ParseMode.HTML,disable_web_page_preview=True,reply_markup=sales_markup); mode="bot"
+    try: sent=await premium_publisher.send(channel,rendered,image)
+    except Exception as exc:
+        log.exception("Premium publish failed; publication aborted")
+        raise RuntimeError(f"Premium Publish не сработал; пост не опубликован: {type(exc).__name__}: {str(exc)[:220]}") from exc
     message_id=getattr(sent,"message_id",None) or getattr(sent,"id",None)
     if not message_id: raise RuntimeError("Telegram отправил пост, но не вернул ID сообщения")
     db.update(draft_id,status="published",published_at=datetime.now(settings.timezone).isoformat(),published_message_id=message_id)
-    return mode,premium_error
+    return "premium",None
 
 @router.message(CommandStart())
 async def start(message:Message,state:FSMContext):
@@ -451,7 +447,7 @@ async def passport_button(c:CallbackQuery):
 async def save_premium_emoji(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(maxsplit=2); channel=parts[1].lower() if len(parts)>1 else ""
-    if channel not in {"liga","gifts","ui"}: return await message.answer("Отправь премиум-эмодзи отдельным сообщением, ответь на него командой:\n<code>/emoji ui</code> — панель и магазин\n<code>/emoji liga</code> или <code>/emoji gifts</code> — публикации\n\nМожно также поставить несколько custom emoji прямо после команды.",parse_mode=ParseMode.HTML)
+    if channel not in {"liga","gifts","ui","all"}: return await message.answer("Отправь четыре Premium emoji ⚡ 🎯 💎 🧠 из одного набора отдельным сообщением и ответь на него командой <code>/emoji all</code>. Отдельные контуры: <code>/emoji ui</code>, <code>/emoji liga</code>, <code>/emoji gifts</code>.",parse_mode=ParseMode.HTML)
     source=message.reply_to_message or message
     source_text=source.text or source.caption or ""
     source_entities=source.entities or source.caption_entities or []
@@ -461,11 +457,18 @@ async def save_premium_emoji(message:Message):
         if emoji_id:
             fallback=entity.extract_from(source_text).replace("\ufe0f",""); custom[fallback]=str(emoji_id)
     if not custom: return await message.answer("Я не увидел custom emoji. Сначала отправь сообщение с эмодзи из Premium-набора, затем ответь на него командой /emoji gifts или /emoji liga.")
-    existing_raw=db.get(f"premium_emojis:{channel}") or "{}"
-    try: existing=json.loads(existing_raw)
-    except json.JSONDecodeError: existing={}
-    existing.update(custom); db.set(f"premium_emojis:{channel}",json.dumps(existing,ensure_ascii=False))
-    await message.answer(f"✅ Сохранил для {channel}: "+" ".join(custom))
+    targets=("liga","gifts","ui") if channel=="all" else (channel,)
+    available_by_target={}
+    for target in targets:
+        existing_raw=db.get(f"premium_emojis:{target}") or "{}"
+        try: existing=json.loads(existing_raw)
+        except json.JSONDecodeError: existing={}
+        existing.update(custom); db.set(f"premium_emojis:{target}",json.dumps(existing,ensure_ascii=False)); available_by_target[target]=existing
+    missing={target:missing_brand_anchors(target,available_by_target[target]) for target in targets if target in {"liga","gifts"}}
+    broken={target:values for target,values in missing.items() if values}
+    note=""
+    if broken: note="\nНе хватает для публикации: "+"; ".join(f"{key} {' '.join(values)}" for key,values in broken.items())
+    await message.answer(f"✅ Сохранил для {', '.join(targets)}: "+" ".join(custom)+note)
 
 async def install_adaptive_emoji_pack(channel:str) -> tuple[dict[str,str],list[str]]:
     sets=[]; failed=[]
@@ -482,11 +485,19 @@ async def install_adaptive_emoji_pack(channel:str) -> tuple[dict[str,str],list[s
 async def install_emoji_pack_command(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(); channel=parts[1].lower() if len(parts)>1 else "gifts"
-    if channel not in {"liga","gifts","ui"}: channel="ui"
-    custom,failed=await install_adaptive_emoji_pack(channel)
+    if channel not in {"liga","gifts","ui","all"}: channel="all"
+    custom,failed=await install_adaptive_emoji_pack("gifts" if channel=="all" else channel)
     if not custom:
         return await message.answer("Не смог получить Adaptive-наборы. Попробуй ещё раз через минуту.")
+    if channel=="all":
+        encoded=json.dumps(custom,ensure_ascii=False)
+        for target in ("gifts","liga","ui"): db.set(f"premium_emojis:{target}",encoded)
+    targets=("gifts","liga","ui") if channel=="all" else (channel,)
+    missing={target:missing_brand_anchors(target,custom) for target in targets if target in {"gifts","liga"}}
+    broken={target:values for target,values in missing.items() if values}
     note=f"\nНе ответили: {', '.join(failed)}" if failed else ""
+    if broken:
+        note += "\nНе хватает: " + "; ".join(f"{key} {' '.join(values)}" for key,values in broken.items())
     await message.answer(f"◆ <b>{channel.upper()} · Adaptive pack установлен</b>\n\nПодключено: {len(custom)} · "+" ".join(custom)+note,parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("panel:emojiauto:"))
@@ -823,9 +834,7 @@ async def pub_cb(c:CallbackQuery):
         log.exception("Publish callback failed")
         return await c.message.answer(f"❌ Не опубликовано: <code>{html.escape(type(exc).__name__+': '+str(exc)[:260])}</code>",parse_mode=ParseMode.HTML)
     await c.message.edit_reply_markup(reply_markup=None)
-    if error:
-        await c.message.answer(f"⚠️ Пост опубликован через Bot API без Premium\nПричина MTProto: <code>{html.escape(error)}</code>",parse_mode=ParseMode.HTML)
-    else: await c.message.answer("✅ Опубликовано через Premium-аккаунт" if mode=="premium" else "✅ Опубликовано через Bot API")
+    await c.message.answer("✅ Опубликовано в фирменном Premium-стиле")
 
 @router.callback_query(F.data.startswith(("harder:","rewrite:","short:")))
 async def rewrite_cb(c:CallbackQuery):
@@ -1107,8 +1116,8 @@ async def panel_help(c:CallbackQuery):
       "panel:linkhelp":"🔗 Добавить готовый разбор в паспорт:\n<code>/playerlink ID_ИГРОКА ID_РАЗБОРА</code>",
       "panel:passporthelp":"📈 Открыть статистику:\n<code>/passport ID_ИГРОКА</code>",
       "panel:emojihelp":("◆ <b>Единый Adaptive-набор</b>\n\n"
-                         "SYSTEM → <b>Установить GI emoji pack</b> — бот сам подключит цельное семейство Icons, Lines и Premium.\n\n"
-                         "Ручное добавление тоже осталось:\n<code>/emoji gifts 💎</code>"),
+                         "Отправь <code>/emojipack all</code> — бот подключит одно семейство для постов, панели и магазина.\n\n"
+                         "Если автонабор не содержит все четыре знака, отправь Premium emoji ⚡ 🎯 💎 🧠 из одного набора и ответь на сообщение командой <code>/emoji all</code>"),
     }
     await c.message.answer(help_text[c.data],parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
 

@@ -25,6 +25,14 @@ CATALOG = (
     EmojiIntent("⚡", "speed", ("liga",), ("скорост", "рывок", "реакц", "быстр", "темп"), "high"),
 )
 
+# A fixed pair per editorial vertical gives every post the same visual rhythm.
+# The glyphs are only fallbacks: publication replaces them with custom-emoji
+# document IDs from one adaptive Telegram pack.
+BRAND_ANCHORS = {
+    "liga": ("⚡", "🎯"),
+    "gifts": ("💎", "🧠"),
+}
+
 # One coherent adaptive family: it follows Telegram's light/dark theme instead
 # of mixing unrelated colourful packs. Later packs only fill missing meanings;
 # the first matching glyph wins, preserving a consistent visual language.
@@ -51,8 +59,14 @@ def custom_emoji_mapping(sticker_sets: Iterable[object]) -> dict[str, str]:
 
 
 def semantic_custom_emojis(text: str, channel: str, available: dict[str, str], limit: int = 3) -> dict[str, str]:
-    """Return only meaningful, configured emoji IDs; never break plain fallback."""
+    """Return a stable brand pair first, then at most one semantic accent."""
     value = str(text or "").lower()
+    cap = max(0, min(limit, 3))
+    chosen = [
+        fallback
+        for fallback in BRAND_ANCHORS.get(channel, ())
+        if fallback in text and str(available.get(fallback, "")).isdigit()
+    ][:cap]
     ranked = []
     for index, item in enumerate(CATALOG):
         if channel not in item.channels or item.fallback not in available:
@@ -61,9 +75,20 @@ def semantic_custom_emojis(text: str, channel: str, available: dict[str, str], l
         if score > 0:
             ranked.append((score, item.fallback))
     ranked.sort(reverse=True)
-    chosen = [fallback for _, fallback in ranked[: max(0, min(limit, 3))]]
-    # The first brand anchor remains available when the text already contains it.
+    for _, fallback in ranked:
+        if fallback in text and fallback not in chosen and len(chosen) < cap:
+            chosen.append(fallback)
+    # Old reviewed drafts may contain a valid non-anchor glyph. Keep it custom,
+    # but never exceed the restrained brand limit.
     for fallback in available:
-        if fallback in text and fallback not in chosen and len(chosen) < min(limit, 3):
+        if fallback in text and fallback not in chosen and len(chosen) < cap:
             chosen.append(fallback)
     return {fallback: available[fallback] for fallback in chosen if str(available[fallback]).isdigit()}
+
+
+def missing_brand_anchors(channel: str, available: dict[str, str]) -> tuple[str, ...]:
+    return tuple(
+        fallback
+        for fallback in BRAND_ANCHORS.get(channel, ())
+        if not str(available.get(fallback, "")).isdigit()
+    )

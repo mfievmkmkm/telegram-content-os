@@ -20,17 +20,26 @@ def test_decorate_guarantees_emphasis_and_emojis():
     value="Первый хук\n\nОсновная мысль\n\nПрактический вывод\n\nЧто выберешь?"
     decorated=decorate_post(value,"liga")
     assert decorated.count("<b>")==1
-    assert decorated.count("<i>")==1
-    assert "⚡" in decorated and "🔥" in decorated
+    assert decorated.count("<i>")==2
+    assert "⚡" in decorated and "🎯" in decorated
+    assert decorated.count("<blockquote>")==1
     assert "🧠" not in decorated and "⚽" not in decorated
 
 
 def test_decorate_limits_emoji_and_drops_final_period():
     value="Хук. ⚽\n\nМысль 🔥.\n\nВывод 👀.\n\nЧто выберешь."
     decorated=decorate_post(value,"liga")
-    assert decorated.count("⚡") + decorated.count("🔥") == 2
-    assert ". ⚡" not in decorated and "🔥." not in decorated
-    assert decorated.endswith("Что выберешь")
+    assert decorated.count("⚡") + decorated.count("🎯") == 2
+    assert ". ⚡" not in decorated and "🎯." not in decorated
+    assert decorated.endswith("Что выберешь</i>")
+
+def test_decorate_is_idempotent_and_removes_random_model_emoji():
+    once=decorate_post("🔥 Хук\n\nТекст 🎁\n\nФинал.","gifts")
+    twice=decorate_post(once,"gifts")
+    assert twice == once
+    assert "🔥" not in twice and "🎁" not in twice
+    assert twice.count("💎") == 1 and twice.count("🧠") == 1
+    assert twice.count("<blockquote>") == 1
 
 def test_custom_emoji_is_rendered_with_safe_numeric_id():
     result=telegram_html("⚡ Хук",{"⚡":"5368324170671202286"})

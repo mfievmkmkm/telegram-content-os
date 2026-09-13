@@ -49,9 +49,9 @@ def plain_text(value: str) -> str:
     return re.sub(r"<[^>]+>", "", clean_generated_post(value))
 
 
-EMOJI_SETS = {
-    "liga": ("⚡", "🧠", "⚽", "🔥", "🎯", "🥶", "👀"),
-    "gifts": ("💎", "📉", "🎁", "🔥", "🧠", "👀", "⚠️"),
+SIGNATURE_EMOJIS = {
+    "liga": ("⚡", "🎯"),
+    "gifts": ("💎", "🧠"),
 }
 
 EMOJI_RE = re.compile(
@@ -67,25 +67,33 @@ def _editorial_punctuation(value: str) -> str:
     lines = text.rstrip().splitlines()
     for index in range(len(lines) - 1, -1, -1):
         if lines[index].strip():
+            lines[index] = re.sub(r"\.\s*(</(?:i|b)>)\s*$", r"\1", lines[index])
             lines[index] = re.sub(r"\.\s*$", "", lines[index])
             break
     return "\n".join(lines)
 
 
 def decorate_post(value: str, channel_key: str) -> str:
-    """Guarantee readable emphasis and emoji anchors even when the LLM ignores markup."""
+    """Apply the single house style used by every channel publication.
+
+    The model supplies meaning; this deterministic pass owns typography and
+    visual rhythm. The two glyphs are replaced by custom emoji at publish time.
+    """
     text=plain_text(value)
     text=re.sub(r"\*\*|__|(?<!\*)\*(?!\*)", "", text)
-    # The editor, not the model, controls visual density: start from clean copy and
-    # add only two deliberate anchors. Variation comes from the channel palette.
+    # Strip the model's random decoration before applying the house signature.
     text=EMOJI_RE.sub("",text)
     text=re.sub(r"[ \t]{2,}"," ",text)
-    paragraphs=[part.strip() for part in re.split(r"\n\s*\n",text) if part.strip()]
+    paragraphs=[part.strip() for part in re.split(r"\n\s*\n",text) if part.strip() and part.strip()!="—"]
     if not paragraphs: return text
-    emojis=EMOJI_SETS.get(channel_key,EMOJI_SETS["liga"])
-    paragraphs[0]=f"{emojis[0]} <b>{paragraphs[0]}</b>"
-    if len(paragraphs)>2:
-        paragraphs[-2]=f"{emojis[3]} <i>{paragraphs[-2]}</i>"
-    elif len(paragraphs)==2:
-        paragraphs[1]=f"{emojis[1]} <i>{paragraphs[1]}</i>"
+    lead,close=SIGNATURE_EMOJIS.get(channel_key,SIGNATURE_EMOJIS["liga"])
+    paragraphs[0]=f"{lead} <b>{paragraphs[0]}</b>"
+    if len(paragraphs)>1:
+        # A short deck creates a magazine-like entry; one vertical thesis block
+        # becomes the recognisable spine of longer posts.
+        if len(paragraphs)>=4 and len(paragraphs[1])<=220:
+            paragraphs[1]=f"<i>{paragraphs[1]}</i>"
+        if len(paragraphs)>=3:
+            paragraphs[-2]=f"<blockquote>{paragraphs[-2]}</blockquote>"
+        paragraphs[-1]=f"{close} <i>{paragraphs[-1]}</i>"
     return _editorial_punctuation("\n\n".join(paragraphs))
