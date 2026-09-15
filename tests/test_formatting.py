@@ -33,6 +33,19 @@ def test_decorate_limits_emoji_and_drops_final_period():
     assert ". ⚡" not in decorated and "🎯." not in decorated
     assert decorated.endswith("Что выберешь</i>")
 
+
+def test_decorate_drops_title_period_but_keeps_expressive_question():
+    dotted=decorate_post("Название поста.\n\nТекст\n\nФинал","gifts")
+    question=decorate_post("Ты точно готов?\n\nТекст\n\nФинал","gifts")
+    assert "<b>Название поста</b>" in dotted
+    assert "<b>Ты точно готов?</b>" in question
+
+
+def test_long_post_can_place_three_distinct_brand_accents():
+    value="Хук.\n\nЛид\n\nОсновная мысль\n\nВывод"
+    decorated=decorate_post(value,"gifts",("💡","🔍","🎨"))
+    assert all(decorated.count(item)==1 for item in ("💡","🔍","🎨"))
+
 def test_decorate_is_idempotent_and_removes_random_model_emoji():
     once=decorate_post("🔥 Хук\n\nТекст 🎁\n\nФинал.","gifts")
     twice=decorate_post(once,"gifts")

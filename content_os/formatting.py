@@ -63,6 +63,13 @@ def _editorial_punctuation(value: str) -> str:
     text = re.sub(r"\.\s*(?=" + EMOJI_RE.pattern + r")", " ", value)
     text = re.sub(r"(" + EMOJI_RE.pattern + r")\.", r"\1", text)
     lines = text.rstrip().splitlines()
+    for index,line in enumerate(lines):
+        if line.strip():
+            # The opening line is a title, not a sentence. Keep expressive ?/!,
+            # but remove a mechanical full stop before the closing bold tag.
+            lines[index]=re.sub(r"\.\s*(</b>)\s*$",r"\1",line)
+            lines[index]=re.sub(r"\.\s*$","",lines[index])
+            break
     for index in range(len(lines) - 1, -1, -1):
         if lines[index].strip():
             lines[index] = re.sub(r"\.\s*(</(?:i|b)>)\s*$", r"\1", lines[index])
@@ -82,7 +89,7 @@ def decorate_post(value: str, channel_key: str, anchors: tuple[str, ...] | None 
     if not paragraphs: return text
     selected=tuple(anchors or SIGNATURE_EMOJIS.get(channel_key,SIGNATURE_EMOJIS["liga"]))
     if len(selected)<2: selected=SIGNATURE_EMOJIS.get(channel_key,SIGNATURE_EMOJIS["liga"])
-    lead,close=selected[:2]
+    lead,close=selected[:2]; middle=selected[2] if len(selected)>2 else ""
     paragraphs[0]=f"{lead} <b>{paragraphs[0]}</b>"
     if len(paragraphs)>1:
         # Ignore punctuation so a second pass (which removes the final period)
@@ -102,4 +109,7 @@ def decorate_post(value: str, channel_key: str, anchors: tuple[str, ...] | None 
         else:
             if len(paragraphs)>=4: paragraphs[1]=f"<i>{paragraphs[1]}</i>"
             paragraphs[-1]=f"{close} <i>{paragraphs[-1]}</i>"
+        if middle and len(paragraphs)>=4:
+            target=1 if layout in {0,3} else max(1,len(paragraphs)-2)
+            paragraphs[target]=f"{middle} {paragraphs[target]}"
     return _editorial_punctuation("\n\n".join(paragraphs))

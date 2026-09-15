@@ -23,6 +23,12 @@ def test_anchor_pair_changes_with_subject_but_stays_inside_one_pack():
     assert all(item in available for item in market+analysis)
 
 
+def test_neutral_posts_rotate_instead_of_using_one_permanent_pair():
+    available={item:str(index) for index,item in enumerate(("🧠","🎯","💎","📉","🔥","💡","🔍","🎨"),1)}
+    pairs={semantic_anchors(f"Новая нейтральная тема {index}","gifts",available) for index in range(12)}
+    assert len(pairs)>=4
+
+
 def test_curated_pack_mapping_keeps_brand_symbols_and_first_style():
     first = SimpleNamespace(stickers=[
         SimpleNamespace(emoji="💎", custom_emoji_id="101"),

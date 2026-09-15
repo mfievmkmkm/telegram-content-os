@@ -91,8 +91,9 @@ def render(channel_key,text):
     raw=db.get(f"premium_emojis:{channel_key}") or "{}"
     try: custom=json.loads(raw)
     except (TypeError,json.JSONDecodeError): custom={}
-    styled=decorate_post(text,channel_key,semantic_anchors(text,channel_key,custom,2))
-    return telegram_html(styled,semantic_custom_emojis(styled,channel_key,custom,2))
+    limit=3 if len(plain_text(text))>=350 else 2
+    styled=decorate_post(text,channel_key,semantic_anchors(text,channel_key,custom,limit))
+    return telegram_html(styled,semantic_custom_emojis(styled,channel_key,custom,limit))
 
 def render_ui(text):
     """Render the admin/shop message surface with one coherent custom-emoji pack."""
