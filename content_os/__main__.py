@@ -34,7 +34,7 @@ from .shop_runtime import create_shop_runtime
 from .funnel import summarize_funnel
 from .brand_cards import gift_card, liga_card, use_gift_card, use_liga_card
 from .mtproto_publish import PremiumPublisher, require_custom_emoji_markup
-from .premium_emoji import EMOJI_THEMES, RECOMMENDED_PACKS, custom_emoji_mapping, missing_brand_anchors, semantic_anchors, semantic_custom_emojis
+from .premium_emoji import EMOJI_THEMES, RECOMMENDED_PACKS, custom_emoji_mapping, emoji_pack_stats, missing_brand_anchors, semantic_anchors, semantic_custom_emojis
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -100,7 +100,7 @@ def render_ui(text):
     raw=db.get("premium_emojis:ui") or "{}"
     try: custom=json.loads(raw)
     except (TypeError,json.JSONDecodeError): custom={}
-    return telegram_html(text,custom)
+    return telegram_html(text,semantic_custom_emojis(text,"ui",custom,3))
 
 async def premium_health():
     if not premium_publisher.ready: return "❌ Premium обязателен: переменные MTProto не заполнены"
@@ -109,12 +109,12 @@ async def premium_health():
         raw=db.get(f"premium_emojis:{key}") or "{}"
         try: custom=json.loads(raw)
         except (TypeError,json.JSONDecodeError): custom={}
-        missing=missing_brand_anchors(key,custom)
-        if missing:
-            lines.append(f"❌ {key}: нужны минимум 2 Premium emoji одного стиля")
+        stats=emoji_pack_stats(custom); missing=missing_brand_anchors(key,custom)
+        if missing or stats["ids"] < 20:
+            lines.append(f"❌ {key}: pack {stats['ids']} ID / {stats['meanings']} смыслов; нужно 20+ ID одного стиля")
             continue
         ok,detail=await premium_publisher.probe(settings.channels[key])
-        lines.append(f"{'✅' if ok else '❌'} {key}: {detail} · 2/2 Premium emoji")
+        lines.append(f"{'✅' if ok else '❌'} {key}: {detail} · {stats['ids']} Premium ID / {stats['meanings']} смыслов")
     return "\n".join(lines)
 
 def shop_health():
@@ -475,15 +475,22 @@ async def save_premium_emoji(message:Message):
     await message.answer(f"✅ Сохранил для {', '.join(targets)}: "+" ".join(custom)+note)
 
 async def install_adaptive_emoji_pack(channel:str,theme_key:str="editorial") -> tuple[dict[str,str],list[str]]:
-    sets=[]; failed=[]
+    candidates=[]; failed=[]
     theme=EMOJI_THEMES.get(theme_key,EMOJI_THEMES["editorial"])
     for name in theme["packs"]:
-        try: sets.append(await bot.get_sticker_set(name))
+        try:
+            sticker_set=await bot.get_sticker_set(name)
+            mapping=custom_emoji_mapping((sticker_set,))
+            stats=emoji_pack_stats(mapping)
+            candidates.append((stats["ids"],stats["meanings"],mapping,name))
         except Exception: failed.append(name)
-    custom=custom_emoji_mapping(sets)
+    # Never merge unrelated packs. Pick the richest single family so every
+    # accent in posts, panel and shop shares one art direction.
+    _,_,custom,selected=max(candidates,default=(0,0,{},""),key=lambda item:(item[0]>=20,item[1],item[0]))
     if custom:
         # Replace the old mixed-style dictionary: one channel, one visual family.
         db.set(f"premium_emojis:{channel}",json.dumps(custom,ensure_ascii=False))
+        db.set("premium_emoji_theme",selected)
     return custom,failed
 
 @router.message(Command("emojipack"))
@@ -504,7 +511,8 @@ async def install_emoji_pack_command(message:Message):
     note=f"\nНе ответили: {', '.join(failed)}" if failed else ""
     if broken:
         note += "\nНе хватает: " + "; ".join(f"{key} {' '.join(values)}" for key,values in broken.items())
-    await message.answer(f"◆ <b>{channel.upper()} · {html.escape(str(EMOJI_THEMES[theme]['title']))}</b>\n\nПодключено: {len(custom)} · "+" ".join(custom)+note,parse_mode=ParseMode.HTML)
+    stats=emoji_pack_stats(custom); preview=" ".join(dict.fromkeys(key.split("#",1)[0] for key in custom))
+    await message.answer(f"◆ <b>{channel.upper()} · {html.escape(str(EMOJI_THEMES[theme]['title']))}</b>\n\nPremium ID: {stats['ids']} · смыслов: {stats['meanings']}\n{preview}"+note,parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data=="panel:emojisample")
 async def emoji_sample_start(c:CallbackQuery,state:FSMContext):
@@ -527,12 +535,17 @@ async def emoji_sample_save(message:Message,state:FSMContext):
         custom=custom_emoji_mapping(sets)
     except Exception as exc:
         return await message.answer(f"Не прочитал pack: {html.escape(str(exc)[:160])}",parse_mode=ParseMode.HTML)
-    if len(custom)<2:
-        return await message.answer("В этом pack мало универсальных знаков. Пришли emoji из другого единого набора.")
+    stats=emoji_pack_stats(custom)
+    if stats["ids"]<20 or stats["meanings"]<8:
+        return await message.answer(
+            f"В этом pack только {stats['ids']} подходящих Premium ID и {stats['meanings']} смыслов. "
+            "Для живой ленты нужен единый pack минимум с 20 ID и 8 разными смысловыми знаками. Пришли emoji из более полного набора."
+        )
     encoded=json.dumps(custom,ensure_ascii=False)
     for target in ("gifts","liga","ui"): db.set(f"premium_emojis:{target}",encoded)
     db.set("premium_emoji_theme",names[0] if names else "custom"); await state.clear()
-    await message.answer(f"✅ <b>Стиль принят везде</b>\n\nPack: <code>{html.escape(names[0] if names else 'custom')}</code>\nАкцентов: {len(custom)} · {' '.join(custom)}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+    preview=" ".join(dict.fromkeys(key.split("#",1)[0] for key in custom))
+    await message.answer(f"✅ <b>Стиль принят везде</b>\n\nPack: <code>{html.escape(names[0] if names else 'custom')}</code>\nPremium ID: {stats['ids']} · смыслов: {stats['meanings']}\n{preview}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
 
 @router.callback_query(F.data.startswith("panel:emojitheme:"))
 async def install_emoji_theme_button(c:CallbackQuery):
@@ -555,7 +568,8 @@ async def install_emoji_pack_button(c:CallbackQuery):
     if not custom:
         return await c.message.answer("Не смог получить Adaptive-наборы. Попробуй ещё раз через минуту.",reply_markup=back_menu())
     note=f"\n\nНе ответили: {html.escape(', '.join(failed))}" if failed else ""
-    await c.message.answer(f"◆ <b>GIFTS · единый emoji pack готов</b>\n\nПодключено: {len(custom)} · "+" ".join(custom)+note,parse_mode=ParseMode.HTML,reply_markup=back_menu())
+    stats=emoji_pack_stats(custom); preview=" ".join(dict.fromkeys(key.split("#",1)[0] for key in custom))
+    await c.message.answer(f"◆ <b>GIFTS · единый emoji pack готов</b>\n\nPremium ID: {stats['ids']} · смыслов: {stats['meanings']}\n{preview}"+note,parse_mode=ParseMode.HTML,reply_markup=back_menu())
 
 @router.message(Command("games"))
 async def games(message:Message):
