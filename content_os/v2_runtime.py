@@ -11,7 +11,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton
 
 from .content_doctor import diagnose, render as render_doctor
 from .shorts import ShortsStudio, brief_text, review_keyboard, style_keyboard, voice_keyboard
-from .shorts.ui import rendered_keyboard, subtitle_keyboard
+from .shorts.ui import render_error_keyboard, rendered_keyboard, subtitle_keyboard
 
 
 log = logging.getLogger("content-os.v2")
@@ -96,7 +96,21 @@ def install(legacy):
         try: _, video, provider, warning = await studio.render(job_id, progress)
         except Exception as exc:
             log.exception("Shorts v2 render failed")
-            return await status.edit_text(f"❌ <b>Shorts не собрался</b>\n\n{html.escape(str(exc)[:350])}", parse_mode=ParseMode.HTML)
+            error=str(exc)[:500]
+            quota="quota" in error.lower() or "кредит" in error.lower()
+            if quota:
+                title="💳 <b>У ElevenLabs закончились кредиты</b>"
+                hint=(
+                    "\n\nЭто не ошибка ключа. Сценарий и настройки сохранены: пополни ElevenLabs и нажми повтор, "
+                    "либо загрузи готовую озвучку. На случайный Edge-голос автоматически не переключаю."
+                )
+            else:
+                title="❌ <b>Shorts не собрался</b>"; hint="\n\nСценарий и настройки сохранены."
+            return await status.edit_text(
+                f"{title}\n\n{html.escape(error)}{hint}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=render_error_keyboard(job_id,quota=quota),
+            )
         brief = studio.sessions.load(job_id); await status.delete()
         provider_note = f" · {provider}" if provider else ""; warning_note = f"\n⚠️ {warning}" if warning else ""
         await legacy.bot.send_video(c.message.chat.id, BufferedInputFile(video, filename=f"shorts-{job_id}.mp4"), caption=(f"🎬 {brief.caption if brief else 'Shorts готов'}{provider_note}{warning_note}")[:1024], supports_streaming=True, reply_markup=rendered_keyboard(job_id))
