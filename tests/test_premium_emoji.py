@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from content_os.premium_emoji import custom_emoji_mapping, semantic_anchors, semantic_custom_emojis
+from content_os.premium_emoji import custom_emoji_mapping, emoji_pack_stats, semantic_anchors, semantic_custom_emojis
 
 
 def test_semantic_custom_emoji_is_limited_and_channel_aware():
@@ -52,3 +52,19 @@ def test_curated_pack_mapping_supports_editor_and_shop_ui():
     assert custom_emoji_mapping((ui_pack,)) == {
         "🎬": "201", "📲": "202", "🤖": "203", "🏠": "204", "🛒": "205",
     }
+
+
+def test_pack_mapping_preserves_multiple_real_ids_for_same_fallback():
+    pack = SimpleNamespace(stickers=[
+        SimpleNamespace(emoji="🔥", custom_emoji_id=str(300 + index)) for index in range(20)
+    ])
+    mapping = custom_emoji_mapping((pack,))
+    assert emoji_pack_stats(mapping) == {"ids": 20, "meanings": 1}
+    assert mapping["🔥"] == "300"
+    assert mapping["🔥#20"] == "319"
+
+
+def test_real_custom_id_rotates_between_posts_without_changing_fallback():
+    available={"🔥":"401", "🔥#2":"402", "🔥#3":"403", "💡":"404"}
+    ids={semantic_custom_emojis(f"🔥 Пост номер {index}","gifts",available)["🔥"] for index in range(20)}
+    assert len(ids) == 3
