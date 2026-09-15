@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,23 @@ class TTSProvider:
 
     async def synthesize(self, text: str, path: Path, voice: str, speed: float) -> TTSResult:
         raise NotImplementedError
+
+
+class ElevenLabsQuotaError(RuntimeError):
+    """A recoverable billing state, not an authentication failure."""
+
+    def __init__(self, remaining: int | None = None, required: int | None = None):
+        self.remaining = remaining
+        self.required = required
+        if remaining is not None and required is not None:
+            missing = max(0, required - remaining)
+            message = (
+                f"ElevenLabs: закончились кредиты — осталось {remaining}, нужно {required} "
+                f"(не хватает {missing}). Сценарий сохранён"
+            )
+        else:
+            message = "ElevenLabs: закончились кредиты. Сценарий сохранён"
+        super().__init__(message)
 
 
 class ElevenLabsProvider(TTSProvider):
@@ -55,7 +74,26 @@ class ElevenLabsProvider(TTSProvider):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
             async with session.post(url, params={"output_format": "mp3_44100_128"}, json=body, headers=headers) as response:
                 if response.status >= 400:
-                    raise RuntimeError(f"ElevenLabs HTTP {response.status}: {(await response.text())[:180]}")
+                    response_text = await response.text()
+                    code = ""
+                    message = response_text
+                    try:
+                        detail = json.loads(response_text).get("detail") or {}
+                        if isinstance(detail, dict):
+                            code = str(detail.get("code") or "")
+                            message = str(detail.get("message") or response_text)
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+                    if code == "quota_exceeded" or "quota" in message.lower():
+                        remaining_match = re.search(r"(?:have|remaining)\D+(\d+)", message, re.I)
+                        required_match = re.search(r"(?:while|need|required)\D+(\d+)", message, re.I)
+                        raise ElevenLabsQuotaError(
+                            int(remaining_match.group(1)) if remaining_match else None,
+                            int(required_match.group(1)) if required_match else None,
+                        )
+                    if response.status in {401, 403}:
+                        raise RuntimeError("ElevenLabs: ключ отклонён. Проверь ELEVENLABS_API_KEY и доступ к выбранному voice ID")
+                    raise RuntimeError(f"ElevenLabs HTTP {response.status}: {message[:180]}")
                 data = await response.json()
         path.write_bytes(base64.b64decode(data["audio_base64"]))
         return TTSResult(self.name, data.get("normalized_alignment") or data.get("alignment"))
