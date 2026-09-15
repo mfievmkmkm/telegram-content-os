@@ -109,3 +109,21 @@ def rendered_keyboard(job_id: int | str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="☠️ Хук · 3 сек", callback_data=f"shortsv2:rewrite:dirty:{key}"),
         ],
     ])
+
+
+def render_error_keyboard(job_id: int | str, *, quota: bool = False) -> InlineKeyboardMarkup:
+    """Recovery actions keep the reviewed script/session intact after a failed render."""
+    key = str(job_id)
+    rows = []
+    if quota:
+        rows.append([InlineKeyboardButton(text="💳 Повторить после пополнения", callback_data=f"shortsv2:approve:{key}")])
+    else:
+        rows.append([InlineKeyboardButton(text="↻ Повторить монтаж", callback_data=f"shortsv2:approve:{key}")])
+    rows.extend([
+        [
+            InlineKeyboardButton(text="🎙 Загрузить свою озвучку", callback_data=f"shortsv2:voice:uploaded:{key}"),
+            InlineKeyboardButton(text="🎚 Другой голос", callback_data=f"shortsv2:voices:{key}"),
+        ],
+        [InlineKeyboardButton(text="‹ Сценарий сохранён", callback_data=f"shortsv2:review:{key}")],
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
