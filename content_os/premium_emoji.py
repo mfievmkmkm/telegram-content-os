@@ -90,25 +90,62 @@ BRAND_FALLBACKS = frozenset(
 )
 
 
+def _storage_fallback(key: str) -> str:
+    """Return the visible fallback from a storage key such as ``🔥#2``."""
+    return str(key).split("#", 1)[0].replace("\ufe0f", "")
+
+
 def custom_emoji_mapping(sticker_sets: Iterable[object]) -> dict[str, str]:
-    """Extract a restrained brand dictionary from Telegram custom-emoji sets."""
+    """Extract every useful ID, including variants with the same fallback.
+
+    Telegram packs often contain many visually different custom emoji that all
+    advertise the same Unicode fallback.  A plain fallback→ID dictionary used
+    to silently discard those variants.  Suffixed storage keys preserve them
+    while remaining backward compatible with existing installations.
+    """
     result: dict[str, str] = {}
+    seen_ids: set[str] = set()
+    variants: dict[str, int] = {}
     for sticker_set in sticker_sets:
+        earlier_pack_fallbacks = {_storage_fallback(key) for key in result}
         for sticker in getattr(sticker_set, "stickers", ()) or ():
             fallback = str(getattr(sticker, "emoji", "") or "").replace("\ufe0f", "")
             emoji_id = str(getattr(sticker, "custom_emoji_id", "") or "")
-            if fallback in BRAND_FALLBACKS and emoji_id.isdigit():
-                result.setdefault(fallback, emoji_id)
+            if (
+                fallback not in BRAND_FALLBACKS
+                or fallback in earlier_pack_fallbacks
+                or not emoji_id.isdigit()
+                or emoji_id in seen_ids
+            ):
+                continue
+            seen_ids.add(emoji_id)
+            number = variants.get(fallback, 0) + 1
+            variants[fallback] = number
+            result[fallback if number == 1 else f"{fallback}#{number}"] = emoji_id
+    return result
+
+
+def emoji_pack_stats(available: dict[str, str]) -> dict[str, int]:
+    valid = [(key, str(value)) for key, value in (available or {}).items() if str(value).isdigit()]
+    return {
+        "ids": len({value for _, value in valid}),
+        "meanings": len({_storage_fallback(key) for key, _ in valid}),
+    }
+
+
+def _variants(available: dict[str, str]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for key, value in (available or {}).items():
+        emoji_id = str(value)
+        fallback = _storage_fallback(key)
+        if fallback and emoji_id.isdigit() and emoji_id not in result.setdefault(fallback, []):
+            result[fallback].append(emoji_id)
     return result
 
 
 def semantic_anchors(text: str, channel: str, available: dict[str, str], limit: int = 2) -> tuple[str, ...]:
     """Choose restrained, topic-aware accents from one installed family."""
-    normalized = {
-        str(key).replace("\ufe0f", ""): str(value)
-        for key, value in (available or {}).items()
-        if str(value).isdigit()
-    }
+    normalized = _variants(available)
     value = str(text or "").lower()
     cap=max(0,min(int(limit),3))
     seed=hashlib.sha256(f"{channel}|{value}".encode("utf-8")).digest()
@@ -150,14 +187,19 @@ def semantic_anchors(text: str, channel: str, available: dict[str, str], limit: 
 
 
 def semantic_custom_emojis(text: str, channel: str, available: dict[str, str], limit: int = 3) -> dict[str, str]:
-    """Return only topic-aware glyphs that occur in the rendered post."""
+    """Return occurring glyphs and rotate real IDs within one visual family."""
     cap = max(0, min(limit, 3))
-    normalized = {str(key).replace("\ufe0f", ""): str(item) for key, item in available.items()}
+    normalized = _variants(available)
     chosen=[]
     for fallback in normalized:
         if fallback in text and fallback not in chosen and len(chosen) < cap:
             chosen.append(fallback)
-    return {fallback: normalized[fallback] for fallback in chosen if str(normalized[fallback]).isdigit()}
+    result = {}
+    for fallback in chosen:
+        variants = normalized[fallback]
+        seed = hashlib.sha256(f"{channel}|{text}|{fallback}".encode("utf-8")).digest()
+        result[fallback] = variants[int.from_bytes(seed[:4], "big") % len(variants)]
+    return result
 
 
 def missing_brand_anchors(channel: str, available: dict[str, str]) -> tuple[str, ...]:
