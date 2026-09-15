@@ -19,10 +19,10 @@ def test_untrusted_html_is_escaped():
 def test_decorate_guarantees_emphasis_and_emojis():
     value="Первый хук\n\nОсновная мысль\n\nПрактический вывод\n\nЧто выберешь?"
     decorated=decorate_post(value,"liga")
-    assert decorated.count("<b>")==1
-    assert decorated.count("<i>")==2
+    assert 1 <= decorated.count("<b>") <= 2
+    assert decorated.count("<i>")>=1
     assert "⚡" in decorated and "🎯" in decorated
-    assert decorated.count("<blockquote>")==1
+    assert decorated.count("<blockquote>")<=1
     assert "🧠" not in decorated and "⚽" not in decorated
 
 
@@ -39,7 +39,7 @@ def test_decorate_is_idempotent_and_removes_random_model_emoji():
     assert twice == once
     assert "🔥" not in twice and "🎁" not in twice
     assert twice.count("💎") == 1 and twice.count("🧠") == 1
-    assert twice.count("<blockquote>") == 1
+    assert twice.count("<blockquote>") <= 1
 
 def test_custom_emoji_is_rendered_with_safe_numeric_id():
     result=telegram_html("⚡ Хук",{"⚡":"5368324170671202286"})

@@ -391,6 +391,12 @@ def install(legacy):
             rows.append(f"{icon} <b>{html.escape(item.title)}</b>  <i>{html.escape(detail)}</i>")
         warnings="\n".join(f"• {html.escape(item)}" for item in gate.warnings) or "нет"
         text=f"<b>⚙ SYSTEM  /  {'READY' if system_ready else 'SETUP'}</b>\n\n"+"\n".join(rows)+f"\n\n<b>Предупреждения</b>\n{warnings}\n\n<i>Значения секретов никогда не показываются</i>"
-        await c.answer(); await c.message.edit_text(text,parse_mode=ParseMode.HTML,reply_markup=home_nav())
+        controls=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◆ Editorial Mono",callback_data="panel:emojitheme:editorial"),
+             InlineKeyboardButton(text="✦ Выбрать emoji pack",callback_data="panel:emojisample")],
+            *section_nav(),
+        ])
+        rendered=legacy.render_ui(text) if hasattr(legacy,"render_ui") else text
+        await c.answer(); await c.message.edit_text(rendered,parse_mode=ParseMode.HTML,reply_markup=controls)
 
     legacy.dp.include_router(router); return router

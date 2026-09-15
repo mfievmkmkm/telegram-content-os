@@ -2,7 +2,7 @@ from datetime import date
 
 from content_os.autopilot_v2 import build_autopilot_plan
 from content_os.meme_engine import MemeConcept
-from content_os.planner_v2 import ContentCandidate
+from content_os.planner_v2 import ContentCandidate, plan_day
 
 
 def candidate(project: str, kind: str, topic: str) -> ContentCandidate:
@@ -33,3 +33,13 @@ def test_regular_content_is_sent_to_content_factory_not_fake_generated():
     payload = plan.actions[0].payload
     assert payload["next_stage"] == "content_factory"
     assert payload["topic"] == "почему игрок исчезает после ошибки"
+
+
+def test_day_plan_never_becomes_three_radar_posts_from_one_feed():
+    rows=[ContentCandidate("gifts",kind,f"radar {index}",source="feed",freshness=.95,relevance=.9,novelty=.9,evidence=.9)
+          for index,kind in enumerate(("post","shorts","meme"))]
+    rows += [ContentCandidate("gifts",kind,f"editorial {index}",source="content-dna",freshness=.8,relevance=.9,novelty=.9,evidence=.9)
+             for index,kind in enumerate(("post","shorts","meme"))]
+    plan=plan_day(rows,per_project=3)
+    assert sum(item.source=="feed" for item in plan.items)==1
+    assert len({item.kind for item in plan.items})==3

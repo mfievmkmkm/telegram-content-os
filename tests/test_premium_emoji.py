@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from content_os.premium_emoji import custom_emoji_mapping, semantic_custom_emojis
+from content_os.premium_emoji import custom_emoji_mapping, semantic_anchors, semantic_custom_emojis
 
 
 def test_semantic_custom_emoji_is_limited_and_channel_aware():
@@ -13,6 +13,14 @@ def test_semantic_custom_emoji_is_limited_and_channel_aware():
 
 def test_invalid_ids_are_ignored_without_breaking_fallback():
     assert semantic_custom_emojis("⚠️ Ошибка", "liga", {"⚠️": "broken"}) == {}
+
+
+def test_anchor_pair_changes_with_subject_but_stays_inside_one_pack():
+    available={"🧠":"1","🎯":"2","💎":"3","📉":"4","🔥":"5"}
+    market=semantic_anchors("Цена и ликвидность рынка","gifts",available)
+    analysis=semantic_anchors("Решение и анализ бизнеса","gifts",available)
+    assert market != analysis
+    assert all(item in available for item in market+analysis)
 
 
 def test_curated_pack_mapping_keeps_brand_symbols_and_first_style():

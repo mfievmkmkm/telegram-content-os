@@ -62,3 +62,8 @@ def test_uploaded_voice_reference_is_sent_without_audio_bytes_in_database():
 def test_render_client_retries_only_temporary_gateway_failures():
     assert ShortRenderClient._transient(RuntimeError("Shorts Worker HTTP 502: failed to respond"))
     assert not ShortRenderClient._transient(RuntimeError("Shorts Worker HTTP 401: invalid api key"))
+
+
+def test_401_explains_the_two_railway_variables():
+    message=ShortRenderClient._endpoint_error(401,"/api/v1/videos")
+    assert "MPT_API_KEY" in message and "SHORTS_API_KEY" in message

@@ -26,7 +26,7 @@ except ImportError:
 
 DATA=Path(os.getenv("SHORTS_DATA_DIR","/data")); JOBS=DATA/"jobs"; TASKS=DATA/"tasks"
 for folder in (JOBS,TASKS): folder.mkdir(parents=True,exist_ok=True)
-API_KEY=os.getenv("SHORTS_API_KEY","").strip(); PEXELS_KEY=os.getenv("PEXELS_API_KEY","").strip()
+API_KEY=(os.getenv("SHORTS_API_KEY","") or os.getenv("MPT_API_KEY","")).strip(); PEXELS_KEY=os.getenv("PEXELS_API_KEY","").strip()
 ELEVEN_KEY=os.getenv("ELEVENLABS_API_KEY","").strip(); ELEVEN_VOICE=os.getenv("ELEVENLABS_VOICE_ID","").strip()
 ELEVEN_MODEL=os.getenv("ELEVENLABS_MODEL_ID","eleven_multilingual_v2").strip()
 REQUIRE_ELEVEN=os.getenv("SHORTS_REQUIRE_ELEVENLABS","true").lower() in {"1","true","yes","on"}
@@ -57,8 +57,10 @@ def startup_cleanup():
         if folder.is_dir(): remove_task(folder.name)
 
 
-def authorize(value):
-    if API_KEY and value!=API_KEY: raise HTTPException(401,"invalid api key")
+def authorize(value=None,bearer=None):
+    token=str(bearer or "").removeprefix("Bearer ").strip()
+    supplied=str(value or token).strip()
+    if API_KEY and supplied!=API_KEY: raise HTTPException(401,"invalid api key")
 
 
 def job_path(task_id): return JOBS/f"{task_id}.json"
@@ -72,7 +74,13 @@ def write_job(job):
 
 @app.get("/health")
 def health(): return {"ok":True,"service":"content-os-shorts","pexels":bool(PEXELS_KEY),"persistent":str(DATA)=="/data",
-                     "voice":"elevenlabs" if ELEVEN_KEY and ELEVEN_VOICE else "blocked" if REQUIRE_ELEVEN else "edge"}
+                     "voice":"elevenlabs" if ELEVEN_KEY and ELEVEN_VOICE else "blocked" if REQUIRE_ELEVEN else "edge",
+                     "auth_required":bool(API_KEY)}
+
+
+@app.get("/api/v1/auth-check")
+def auth_check(x_api_key:str|None=Header(None),authorization:str|None=Header(None)):
+    authorize(x_api_key,authorization); return {"ok":True}
 
 
 @app.post("/api/v1/videos")

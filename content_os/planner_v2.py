@@ -74,11 +74,21 @@ def plan_day(
         rows.sort(key=lambda item: (item.score, item.novelty, item.freshness), reverse=True)
         last_kind = (recent_kinds.get(project) or [""])[-1]
         used_topics: set[str] = set()
+        used_kinds: set[str] = set()
+        external_sources = 0
         count = 0
         for candidate in rows:
             normalized = candidate.topic.lower().strip()
             if normalized in used_topics:
                 continue
+            is_external=bool(candidate.source and candidate.source!="content-dna")
+            if is_external and external_sources>=1:
+                continue
+            if candidate.kind in used_kinds:
+                alternative=next((x for x in rows if x.kind not in used_kinds and x.topic.lower().strip() not in used_topics
+                    and (not x.source or x.source=="content-dna" or external_sources==0) and x.score>=candidate.score-.16),None)
+                if alternative is not None:
+                    candidate=alternative; normalized=candidate.topic.lower().strip(); is_external=bool(candidate.source and candidate.source!="content-dna")
             # Do not repeat the same format immediately if an almost-as-good
             # alternative exists. This prevents mechanical content calendars.
             if candidate.kind == last_kind:
@@ -87,6 +97,8 @@ def plan_day(
                     candidate = alternative
                     normalized = candidate.topic.lower().strip()
             used_topics.add(normalized)
+            used_kinds.add(candidate.kind)
+            external_sources += int(is_external)
             reason_bits = []
             if candidate.freshness >= .8: reason_bits.append("свежий инфоповод")
             if candidate.novelty >= .8: reason_bits.append("необычный угол")

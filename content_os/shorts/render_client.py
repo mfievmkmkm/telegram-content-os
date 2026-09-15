@@ -22,7 +22,9 @@ class ShortRenderClient:
 
     @property
     def headers(self) -> dict[str, str]:
-        return {"x-api-key": self.settings.mpt_api_key} if self.settings.mpt_api_key else {}
+        if not self.settings.mpt_api_key:
+            return {}
+        return {"x-api-key": self.settings.mpt_api_key, "Authorization": f"Bearer {self.settings.mpt_api_key}"}
 
     async def probe(self) -> tuple[bool, str]:
         if not self.ready:
@@ -35,6 +37,12 @@ class ShortRenderClient:
                         return False, self._endpoint_error(response.status, "/health")
             if data.get("service") != "content-os-shorts":
                 return False, "MPT_BASE_URL ведёт не на Shorts Worker"
+            async with session.get(self.settings.mpt_base_url + "/api/v1/auth-check") as response:
+                if response.status == 401:
+                    return False, self._endpoint_error(401,"/api/v1/auth-check")
+                # Compatibility with a worker image from before auth-check.
+                if response.status not in {200,404}:
+                    return False,self._endpoint_error(response.status,"/api/v1/auth-check")
             providers = data.get("tts") or {}
             voice = ", ".join(key for key, ok in providers.items() if ok) or data.get("voice", "—")
             assets = ",".join(data.get("asset_types") or []) or "stock_video"
@@ -120,6 +128,12 @@ class ShortRenderClient:
             return (
                 f"Shorts Worker HTTP 404 на {path}. Проверь MPT_BASE_URL: нужен корневой "
                 "Railway-домен сервиса Shorts без /health, /api и пути; затем обнови его image"
+            )
+        if status == 401:
+            return (
+                "Shorts Worker HTTP 401: ключи не совпадают. В Editor задай "
+                "MPT_API_KEY, а в Shorts Worker — SHORTS_API_KEY с точно тем же значением, "
+                "без кавычек и пробелов"
             )
         return f"Shorts Worker HTTP {status} на {path}"
 

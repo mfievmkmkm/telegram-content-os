@@ -34,7 +34,7 @@ from .shop_runtime import create_shop_runtime
 from .funnel import summarize_funnel
 from .brand_cards import gift_card, liga_card, use_gift_card, use_liga_card
 from .mtproto_publish import PremiumPublisher, require_custom_emoji_markup
-from .premium_emoji import RECOMMENDED_PACKS, custom_emoji_mapping, missing_brand_anchors, semantic_custom_emojis
+from .premium_emoji import EMOJI_THEMES, RECOMMENDED_PACKS, custom_emoji_mapping, missing_brand_anchors, semantic_anchors, semantic_custom_emojis
 
 settings=load_settings()
 db=(SupabaseDatabase(settings.supabase_url,settings.supabase_key,settings.timezone)
@@ -72,6 +72,9 @@ class ShopState(StatesGroup):
 class CourseFileState(StatesGroup):
     waiting_file = State()
 
+class PremiumEmojiState(StatesGroup):
+    waiting_sample = State()
+
 def admin(obj): return bool(obj.from_user and obj.from_user.username and obj.from_user.username.lower() in settings.admins)
 
 async def safe_edit_text(message,*args,**kwargs):
@@ -85,10 +88,10 @@ def track(user_id,event_type,source="",offer_key=""):
     except Exception: log.info("Funnel schema is not deployed yet")
 
 def render(channel_key,text):
-    styled=decorate_post(text,channel_key)
     raw=db.get(f"premium_emojis:{channel_key}") or "{}"
     try: custom=json.loads(raw)
     except (TypeError,json.JSONDecodeError): custom={}
+    styled=decorate_post(text,channel_key,semantic_anchors(text,channel_key,custom,2))
     return telegram_html(styled,semantic_custom_emojis(styled,channel_key,custom,2))
 
 def render_ui(text):
@@ -107,7 +110,7 @@ async def premium_health():
         except (TypeError,json.JSONDecodeError): custom={}
         missing=missing_brand_anchors(key,custom)
         if missing:
-            lines.append(f"❌ {key}: нет фирменных emoji {' '.join(missing)} · запусти /emojipack all")
+            lines.append(f"❌ {key}: нужны минимум 2 Premium emoji одного стиля")
             continue
         ok,detail=await premium_publisher.probe(settings.channels[key])
         lines.append(f"{'✅' if ok else '❌'} {key}: {detail} · 2/2 Premium emoji")
@@ -375,7 +378,7 @@ async def panel_system(c:CallbackQuery):
     if not admin(c): return
     await c.message.edit_text("⚙️ <b>Система</b>",parse_mode=ParseMode.HTML,reply_markup=InlineKeyboardMarkup(inline_keyboard=[
       [InlineKeyboardButton(text="● Состояние",callback_data="panel:status"),InlineKeyboardButton(text="✦ Premium эмодзи",callback_data="panel:emojihelp")],
-      [InlineKeyboardButton(text="◆ Установить GI emoji pack",callback_data="panel:emojiauto:gifts")],
+      [InlineKeyboardButton(text="◆ Editorial Mono",callback_data="panel:emojitheme:editorial"),InlineKeyboardButton(text="✦ Из моего pack",callback_data="panel:emojisample")],
       [InlineKeyboardButton(text="▦ База курсов",callback_data="panel:courses")],
       [InlineKeyboardButton(text="↻ Обновить память",callback_data="panel:sync"),InlineKeyboardButton(text="↗ Аналитика",callback_data="panel:analytics")],
       [InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")]])); await c.answer()
@@ -470,9 +473,10 @@ async def save_premium_emoji(message:Message):
     if broken: note="\nНе хватает для публикации: "+"; ".join(f"{key} {' '.join(values)}" for key,values in broken.items())
     await message.answer(f"✅ Сохранил для {', '.join(targets)}: "+" ".join(custom)+note)
 
-async def install_adaptive_emoji_pack(channel:str) -> tuple[dict[str,str],list[str]]:
+async def install_adaptive_emoji_pack(channel:str,theme_key:str="editorial") -> tuple[dict[str,str],list[str]]:
     sets=[]; failed=[]
-    for name in RECOMMENDED_PACKS:
+    theme=EMOJI_THEMES.get(theme_key,EMOJI_THEMES["editorial"])
+    for name in theme["packs"]:
         try: sets.append(await bot.get_sticker_set(name))
         except Exception: failed.append(name)
     custom=custom_emoji_mapping(sets)
@@ -486,7 +490,8 @@ async def install_emoji_pack_command(message:Message):
     if not admin(message): return
     parts=(message.text or "").split(); channel=parts[1].lower() if len(parts)>1 else "gifts"
     if channel not in {"liga","gifts","ui","all"}: channel="all"
-    custom,failed=await install_adaptive_emoji_pack("gifts" if channel=="all" else channel)
+    theme=parts[2].lower() if len(parts)>2 and parts[2].lower() in EMOJI_THEMES else "editorial"
+    custom,failed=await install_adaptive_emoji_pack("gifts" if channel=="all" else channel,theme)
     if not custom:
         return await message.answer("Не смог получить Adaptive-наборы. Попробуй ещё раз через минуту.")
     if channel=="all":
@@ -498,7 +503,47 @@ async def install_emoji_pack_command(message:Message):
     note=f"\nНе ответили: {', '.join(failed)}" if failed else ""
     if broken:
         note += "\nНе хватает: " + "; ".join(f"{key} {' '.join(values)}" for key,values in broken.items())
-    await message.answer(f"◆ <b>{channel.upper()} · Adaptive pack установлен</b>\n\nПодключено: {len(custom)} · "+" ".join(custom)+note,parse_mode=ParseMode.HTML)
+    await message.answer(f"◆ <b>{channel.upper()} · {html.escape(str(EMOJI_THEMES[theme]['title']))}</b>\n\nПодключено: {len(custom)} · "+" ".join(custom)+note,parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data=="panel:emojisample")
+async def emoji_sample_start(c:CallbackQuery,state:FSMContext):
+    if not admin(c): return
+    await state.set_state(PremiumEmojiState.waiting_sample); await c.answer()
+    await c.message.answer("Пришли <b>один</b> Premium emoji из нужного набора. Я сам найду весь pack, отберу подходящие знаки и применю его к постам, панели и магазину.",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+
+@router.message(PremiumEmojiState.waiting_sample)
+async def emoji_sample_save(message:Message,state:FSMContext):
+    if not admin(message): return
+    value=message.text or message.caption or ""; entities=message.entities or message.caption_entities or []
+    ids=[str(getattr(item,"custom_emoji_id","")) for item in entities if getattr(item,"custom_emoji_id",None)]
+    if not ids: return await message.answer("В сообщении нет Premium emoji. Открой панель emoji → Premium и пришли один знак.")
+    try:
+        stickers=await bot.get_custom_emoji_stickers(ids[:5]); names=[]
+        for sticker in stickers:
+            name=str(getattr(sticker,"set_name","") or "")
+            if name and name not in names: names.append(name)
+        sets=[await bot.get_sticker_set(name) for name in names]
+        custom=custom_emoji_mapping(sets)
+    except Exception as exc:
+        return await message.answer(f"Не прочитал pack: {html.escape(str(exc)[:160])}",parse_mode=ParseMode.HTML)
+    if len(custom)<2:
+        return await message.answer("В этом pack мало универсальных знаков. Пришли emoji из другого единого набора.")
+    encoded=json.dumps(custom,ensure_ascii=False)
+    for target in ("gifts","liga","ui"): db.set(f"premium_emojis:{target}",encoded)
+    db.set("premium_emoji_theme",names[0] if names else "custom"); await state.clear()
+    await message.answer(f"✅ <b>Стиль принят везде</b>\n\nPack: <code>{html.escape(names[0] if names else 'custom')}</code>\nАкцентов: {len(custom)} · {' '.join(custom)}",parse_mode=ParseMode.HTML,reply_markup=back_menu())
+
+@router.callback_query(F.data.startswith("panel:emojitheme:"))
+async def install_emoji_theme_button(c:CallbackQuery):
+    if not admin(c): return
+    theme=c.data.rsplit(":",1)[-1]
+    await c.answer("Подключаю стиль…")
+    custom,failed=await install_adaptive_emoji_pack("gifts",theme)
+    if not custom: return await c.message.answer("Автонабор не ответил. Нажми «Из моего pack» и пришли один эмодзи — это надёжнее.",reply_markup=back_menu())
+    encoded=json.dumps(custom,ensure_ascii=False)
+    for target in ("gifts","liga","ui"): db.set(f"premium_emojis:{target}",encoded)
+    db.set("premium_emoji_theme",theme)
+    await c.message.answer(f"✅ <b>{html.escape(str(EMOJI_THEMES.get(theme,{}).get('title',theme)))}</b> применён к двум каналам, панели и магазину.",parse_mode=ParseMode.HTML,reply_markup=back_menu())
 
 @router.callback_query(F.data.startswith("panel:emojiauto:"))
 async def install_emoji_pack_button(c:CallbackQuery):
@@ -726,7 +771,9 @@ async def gen_cb(c:CallbackQuery):
 def rubric_keyboard(channel):
     labels={"короткий_удар":"⚡ Короткий удар","история":"🎭 История","антисистема":"🥊 Антисистема","разбор":"🔬 Разбор","тренировка":"🏋️ Тренировка",
             "новость":"⚡ Новость","рынок_за_минуту":"📊 Рынок","разбор_ошибки":"🧨 Разбор ошибки","обучение":"🧠 Обучение",
-            "сигнал_или_шум":"📡 Сигнал/шум","мем":"😏 Мем"}
+            "сигнал_или_шум":"📡 Сигнал/шум","мем":"😏 Мем","портрет":"◇ Бизнес-портрет",
+            "провал":"↘ Провал без глянца","интернет_феномен":"◉ Интернет-феномен","карьера":"↗ Карьера",
+            "индустрия":"▦ Бизнес футбола","психология":"◎ Голова игрока"}
     rows=[[InlineKeyboardButton(text=labels.get(fmt,fmt.replace("_"," ").title()),callback_data=f"rubric:{fmt}")]
       for fmt in CHANNELS[channel]["formats"]]
     rows.append([InlineKeyboardButton(text="‹ Назад",callback_data=f"gen:{channel}"),InlineKeyboardButton(text="⌂ Главное меню",callback_data="panel:home")])
@@ -1115,9 +1162,8 @@ async def panel_help(c:CallbackQuery):
       "panel:newplayer":"➕ Создать футболиста:\n<code>/playeradd Имя | 2009 | правый вингер | правая</code>",
       "panel:linkhelp":"🔗 Добавить готовый разбор в паспорт:\n<code>/playerlink ID_ИГРОКА ID_РАЗБОРА</code>",
       "panel:passporthelp":"📈 Открыть статистику:\n<code>/passport ID_ИГРОКА</code>",
-      "panel:emojihelp":("◆ <b>Единый Adaptive-набор</b>\n\n"
-                         "Отправь <code>/emojipack all</code> — бот подключит одно семейство для постов, панели и магазина.\n\n"
-                         "Если автонабор не содержит все четыре знака, отправь Premium emoji ⚡ 🎯 💎 🧠 из одного набора и ответь на сообщение командой <code>/emoji all</code>"),
+      "panel:emojihelp":("✦ <b>PREMIUM STYLE</b>\n\nОткрой <b>Система</b> и выбери <b>Editorial Mono</b> или <b>Из моего pack</b>.\n\n"
+                         "Достаточно прислать один Premium emoji: бот сам заберёт весь набор. В посте будет 1–2 смысловых акцента, а не одна и та же пара везде."),
     }
     await c.message.answer(help_text[c.data],parse_mode=ParseMode.HTML,reply_markup=back_menu()); await c.answer()
 
