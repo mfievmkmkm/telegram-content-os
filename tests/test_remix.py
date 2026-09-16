@@ -14,7 +14,7 @@ class FakeEditor:
             "meme":"Когда увидел важную деталь уже после того, как все всё поняли.",
             "poll_question":"Что ты проверяешь первым?",
             "poll_options":["Контекст","Детали","Результат"],
-            "shorts_script":"Ты замечаешь очевидное слишком поздно. Сначала проверь контекст, потом ключевую деталь, и только после этого делай вывод. Именно порядок проверки чаще всего спасает от глупой ошибки. Если нужен полный разбор — он уже в канале.",
+            "shorts_script":2*"Ты замечаешь очевидное слишком поздно. Сначала проверь контекст, потом ключевую деталь, и только после этого делай вывод. Именно порядок проверки чаще всего спасает от глупой ошибки. Если нужен полный разбор — он уже в канале.",
             "sales_bridge":"Если хочешь разобрать свою ситуацию, начни с диагностики — без покупки вслепую.",
         }, ensure_ascii=False)
 
@@ -26,7 +26,7 @@ class AliasEditor:
             "short_post":"Короткая версия с другим углом и самостоятельной мыслью.",
             "meme_text":"Я всё проверил. Проверку решил не проверять.",
             "poll":{"question":"Что ломает решение?","options":["Спешка","Самоуверенность"]},
-            "video_script":"Это сценарий ролика, который модель почему-то назвала иначе, но его нельзя выбрасывать из-за имени поля.",
+            "video_script":5*"Это сценарий ролика, который модель почему-то назвала иначе, но его нельзя выбрасывать из-за имени поля. ",
             "cta":"Сохрани разбор и проверь свой выбор ещё раз.",
         },ensure_ascii=False)
 
@@ -67,3 +67,42 @@ def test_remix_never_dead_ends_after_two_broken_answers():
     assert len(bundle.poll_options) >= 2
     assert 64 <= len(bundle.shorts_script.split()) <= 105
     assert bundle.sales_bridge
+
+
+def test_missing_fields_report_names_and_preserve_good_formats():
+    payload = json.loads(asyncio.run(FakeEditor().llm("", "", 0)))
+    del payload["shorts_script"]
+    del payload["sales_bridge"]
+    with pytest.raises(ValueError, match="shorts_script, sales_bridge"):
+        RemixService.parse(json.dumps(payload))
+    class Partial:
+        calls = 0
+        async def llm(self, *args):
+            self.calls += 1
+            return json.dumps(payload) if self.calls == 1 else "not json"
+    result = asyncio.run(RemixService(Partial()).create("gifts", "Исходный материал для проверки того, что удачные форматы не теряются при ремонте ответа."))
+    assert result.telegram_long == payload["telegram_long"]
+    assert result.recovered_fields == ("shorts_script", "sales_bridge")
+    assert 64 <= len(result.shorts_script.split()) <= 105
+
+
+@pytest.mark.parametrize("bad", [None, {}, {"text":"wrong type"}, ["wrong type"], True, 12])
+def test_text_fields_reject_non_strings(bad):
+    payload = json.loads(asyncio.run(FakeEditor().llm("", "", 0)))
+    payload["sales_bridge"] = bad
+    with pytest.raises(ValueError, match="sales_bridge"):
+        RemixService.parse(json.dumps(payload))
+
+
+def test_repair_merges_only_missing_fields():
+    payload = json.loads(asyncio.run(FakeEditor().llm("", "", 0)))
+    expected = payload.pop("sales_bridge")
+    class Partial:
+        calls = 0
+        async def llm(self, *args):
+            self.calls += 1
+            return json.dumps(payload) if self.calls == 1 else json.dumps({"sales_bridge":expected,"telegram_long":"Не заменяй удачный текст на это"})
+    result = asyncio.run(RemixService(Partial()).create("liga", "Исходный материал для проверки того, что удачные форматы не теряются при ремонте ответа."))
+    assert result.sales_bridge == expected
+    assert result.telegram_long == payload["telegram_long"]
+    assert not result.recovered_fields

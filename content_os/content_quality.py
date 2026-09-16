@@ -75,7 +75,7 @@ def review_candidate(
 ) -> QualityDecision:
     fp = build_fingerprint(text=text, topic=topic, angle=angle, format_key=format_key, visual_type=visual_type)
     repeat = repetition_gate(fp, text, history or [])
-    report = inspect_content(text, channel=channel, similarity_score=repeat.score if not repeat.allowed else 0.0, fact_numbers=fact_numbers)
+    report = inspect_content(text, channel=channel, similarity_score=repeat.score if not repeat.allowed else 0.0, fact_numbers=fact_numbers, format_key=format_key)
     return QualityDecision(
         approved=report.approved and repeat.allowed,
         fingerprint=fp,

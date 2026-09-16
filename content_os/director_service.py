@@ -58,6 +58,9 @@ class ContentDirectorService:
             raise KeyError(f"Draft {draft_id} not found")
         decision = self.evaluate(draft)
         rewrites = 0
+        # Poll payload is structured. Text-only rewrites would desynchronize its preview.
+        if draft["format_key"] == "remix_poll":
+            return DirectorResult(draft=draft, decision=decision, rewrites=0)
         while not decision.approved and rewrites < max(0, min(max_rewrites, 2)):
             has_duplicate = any(issue.code in {"duplicate", "similar"} for issue in decision.report.issues)
             mode = "rewrite" if has_duplicate else "harder"

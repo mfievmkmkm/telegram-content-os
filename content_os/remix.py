@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 from .channels import CHANNELS, POST_RULES
 from .formatting import clean_generated_post, plain_text
@@ -17,6 +17,7 @@ class RemixBundle:
     poll_options: tuple[str, ...]
     shorts_script: str
     sales_bridge: str
+    recovered_fields: tuple[str, ...] = ()
 
 
 class RemixService:
@@ -32,23 +33,34 @@ class RemixService:
         if len(clean) < 40:
             raise ValueError("Remix needs a real source idea, not a title")
         prompt = self._prompt(channel_key, clean)
-        raw = await self.editor.llm(CHANNELS[channel_key]["voice"] + POST_RULES, prompt, .84)
+        request = getattr(self.editor, "remix_llm", self.editor.llm)
+        raw = ""
         try:
+            raw = await request(CHANNELS[channel_key]["voice"] + POST_RULES, prompt, .84)
             return self.parse(raw)
-        except (ValueError, TypeError, json.JSONDecodeError) as first_error:
-            repair_prompt = (
-                "Исправь ответ CONTENT REMIX. Не переписывай удачные части. Верни один JSON-объект "
-                "строго с полями telegram_long, telegram_short, meme, poll_question, poll_options, "
-                "shorts_script, sales_bridge. poll_options — массив из 2–4 строк. Никакого markdown.\n\n"
-                f"ОШИБКА: {first_error}\n\nИСХОДНАЯ ИДЕЯ:\n{clean[:5000]}\n\nОТВЕТ ДЛЯ РЕМОНТА:\n{raw[:7000]}"
-            )
-            try:
-                repaired = await self.editor.llm(CHANNELS[channel_key]["voice"] + POST_RULES, repair_prompt, .55)
-                return self.parse(repaired)
-            except (ValueError, TypeError, json.JSONDecodeError):
-                # A flaky model must not turn a paid operator action into a dead
-                # button. The fallback preserves the source and every output slot.
-                return self.fallback(channel_key, clean)
+        except ValueError as exc:
+            raw = getattr(exc, "partial", raw)
+        valid = self.valid_fields(raw)
+        missing = [key for key in self.FIELDS if key not in valid]
+        repair_prompt = (
+            "Исправь CONTENT REMIX. Верни JSON только с недостающими или неверными полями: "
+            + ", ".join(missing) + ". poll_options: 2–4 разные строки, вопрос до 250 знаков, "
+            "варианты до 100 знаков. shorts_script: 64–105 слов. Никакого markdown.\n"
+            f"ИСХОДНИК:\n{clean[:5000]}\nОТВЕТ:\n{raw[:7000]}"
+        )
+        try:
+            repaired = await request(CHANNELS[channel_key]["voice"] + POST_RULES, repair_prompt, .55)
+        except ValueError as exc:
+            repaired = getattr(exc, "partial", "")
+        # Transport/auth errors propagate to the retry UI, never masquerade as success.
+        for key, value in self.valid_fields(repaired).items():
+            valid.setdefault(key, value)
+        recovered = tuple(key for key in self.FIELDS if key not in valid)
+        defaults = asdict(self.fallback(channel_key, clean))
+        defaults.update(valid)
+        defaults["poll_options"] = tuple(defaults["poll_options"])
+        defaults["recovered_fields"] = recovered
+        return RemixBundle(**defaults)
 
     @staticmethod
     def _prompt(channel_key: str, source_text: str) -> str:
@@ -68,8 +80,10 @@ class RemixService:
             f"ИСХОДНАЯ ИДЕЯ:\n{source_text[:7000]}"
         )
 
+    FIELDS = ("telegram_long", "telegram_short", "meme", "poll_question", "poll_options", "shorts_script", "sales_bridge")
+
     @staticmethod
-    def parse(raw: str) -> RemixBundle:
+    def normalize(raw: str) -> dict:
         value = (raw or "").strip()
         if value.startswith("```"):
             value = value.strip("`")
@@ -105,25 +119,42 @@ class RemixService:
             data[canonical] = next((data[key] for key in candidates if data.get(key) not in (None, "", [])), None)
         data["poll_question"] = data.get("poll_question") or poll.get("question")
         data["poll_options"] = data.get("poll_options") or poll.get("options")
-        required = ("telegram_long", "telegram_short", "meme", "poll_question", "poll_options", "shorts_script", "sales_bridge")
-        missing = [key for key in required if key not in data]
+        return data
+
+    @classmethod
+    def valid_fields(cls, raw: str) -> dict:
+        try:
+            data = cls.normalize(raw)
+        except (ValueError, TypeError, AttributeError):
+            return {}
+        valid = {}
+        for key in cls.FIELDS:
+            value = data.get(key)
+            if key == "poll_options":
+                if (isinstance(value, list) and 2 <= len(value) <= 4
+                        and all(isinstance(x, str) and 0 < len(x.strip()) <= 100 for x in value)
+                        and len({x.strip().casefold() for x in value}) == len(value)):
+                    valid[key] = tuple(x.strip() for x in value)
+            elif isinstance(value, str):
+                text = clean_generated_post(value).strip()
+                if len(text) < 8:
+                    continue
+                if key == "poll_question" and len(text) > 250:
+                    continue
+                if key == "shorts_script" and not 64 <= len(plain_text(text).split()) <= 105:
+                    continue
+                valid[key] = text
+        return valid
+
+    @classmethod
+    def parse(cls, raw: str) -> RemixBundle:
+        cls.normalize(raw)  # Preserve the actionable invalid-JSON error.
+        valid = cls.valid_fields(raw)
+        missing = [key for key in cls.FIELDS if key not in valid]
         if missing:
-            raise ValueError(f"Remix response misses fields: {', '.join(missing)}")
-        options = tuple(str(item).strip() for item in data["poll_options"] if str(item).strip()) if isinstance(data["poll_options"], list) else ()
-        if not 2 <= len(options) <= 4:
-            raise ValueError("Remix poll_options must contain 2–4 options")
-        texts = {key: clean_generated_post(str(data[key])).strip() for key in required if key != "poll_options"}
-        if any(len(text) < 8 for text in texts.values()):
-            raise ValueError("Remix response contains an empty format")
-        return RemixBundle(
-            telegram_long=texts["telegram_long"],
-            telegram_short=texts["telegram_short"],
-            meme=texts["meme"],
-            poll_question=texts["poll_question"],
-            poll_options=options,
-            shorts_script=texts["shorts_script"],
-            sales_bridge=texts["sales_bridge"],
-        )
+            hint = " (poll_options: 2–4 уникальные строки)" if "poll_options" in missing else ""
+            raise ValueError("Remix response has missing or invalid fields: " + ", ".join(missing) + hint)
+        return RemixBundle(**valid)
 
     @staticmethod
     def fallback(channel_key: str, source_text: str) -> RemixBundle:

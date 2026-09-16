@@ -38,6 +38,10 @@ class SupabaseDatabase:
         rows=self.client.table("content_os_drafts").select("*").eq("id",draft_id).limit(1).execute().data
         return rows[0] if rows else None
 
+    def draft_by_source_hash(self, channel_key, source_hash):
+        rows=self.client.table("content_os_drafts").select("*").eq("channel_key",channel_key).eq("source_hash",source_hash).limit(1).execute().data
+        return rows[0] if rows else None
+
     def recent_drafts(self,channel_key,limit=20):
         return self.client.table("content_os_drafts").select("*").eq("channel_key",channel_key).neq("status","deleted").order("id",desc=True).limit(limit).execute().data
 

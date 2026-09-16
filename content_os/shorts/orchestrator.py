@@ -5,7 +5,8 @@ import json
 from dataclasses import asdict
 
 from ..visual_renderer import render_card
-from .models import ShortBrief
+from .models import ShortBrief, ShortScene
+from ..formatting import plain_text
 from .presets import DELIVERY_PRESETS, VOICE_PRESETS, voice
 from .render_client import ShortRenderClient
 from .scenes import ShortSceneService
@@ -32,6 +33,25 @@ class ShortsStudio:
         payload = self.worker_payload(brief)
         # Reuse the existing video-job table so migration does not require a new schema.
         job_id = self.db.save_video_job(draft["id"], json.dumps(payload, ensure_ascii=False, indent=2))
+        self.sessions.save(job_id, brief)
+        return job_id, brief
+
+    async def start_from_script(self, draft, script: str) -> tuple[int | str, ShortBrief]:
+        """Import a Remix script verbatim; rendering still requires explicit approval."""
+        voiceover = plain_text(script).strip()
+        words = voiceover.split()
+        hook = " ".join(words[:12]).rstrip(" ,;:")
+        # Literal text scenes avoid invented stock imagery and preserve the complete script.
+        chunks = [" ".join(words[len(words)*i//8:len(words)*(i+1)//8]) for i in range(8)]
+        brief = ShortBrief(
+            title=hook[:70], hook=hook, voiceover=voiceover,
+            scenes=[ShortScene(4.5, chunk, chunk, "text_scene") for chunk in chunks],
+            caption=hook, music_mood="energetic" if draft["channel_key"] == "liga" else "electronic",
+            cta=chunks[-1], channel=draft["channel_key"], draft_id=draft["id"],
+            metadata={"source": "remix"},
+        )
+        self.scripts.validate(brief)
+        job_id = self.db.save_video_job(draft["id"], json.dumps(self.worker_payload(brief), ensure_ascii=False))
         self.sessions.save(job_id, brief)
         return job_id, brief
 

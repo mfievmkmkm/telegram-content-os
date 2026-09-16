@@ -29,14 +29,15 @@ class DirectorReport:
         self.score = max(0, self.score - issue.penalty)
 
 
-def inspect_content(text: str, *, channel: str, similarity_score: float = 0.0, fact_numbers: tuple[str, ...] | None = None) -> DirectorReport:
+def inspect_content(text: str, *, channel: str, similarity_score: float = 0.0, fact_numbers: tuple[str, ...] | None = None, format_key: str = "") -> DirectorReport:
     report = DirectorReport()
     clean = plain_text(text or "").strip()
     words = clean.split()
     lines = [line.strip() for line in clean.splitlines() if line.strip()]
     first = lines[0] if lines else ""
 
-    if len(words) < 35:
+    compact = format_key in {"remix_meme", "remix_short", "remix_sales", "remix_poll"}
+    if len(words) < (3 if compact else 35):
         report.add(DirectorIssue("too_short", "Материал слишком короткий: мысль не успевает раскрыться", penalty=12))
     if len(words) > 420:
         report.add(DirectorIssue("too_long", "Материал перегружен: нужен более жёсткий монтаж текста", penalty=10))

@@ -97,7 +97,7 @@ def test_oversize_card_is_rejected_before_partial_publish():
     db = DB(); db.row["text"] = "Слишком длинно. " * 100
     memory = EditorialMemory(db); memory.select_variant(8, 1, db.row["text"])
     bot = Bot(); premium = Premium(ready=True); service = PublishingService(make_legacy(db, bot, premium=premium), memory)
-    with pytest.raises(RuntimeError, match="Короче"):
+    with pytest.raises(ValueError, match="Подогнать под карточку"):
         asyncio.run(service.publish(8))
     assert bot.photos == [] and bot.messages == [] and premium.sent == []
     assert db.updated == {}
@@ -121,3 +121,71 @@ def test_publish_cta_uses_campaign_payload_when_shop_bot_exists():
     url = link
     assert "https://t.me/shopbot?start=c_g_8_p_gifts-access_organic" in url
     assert "service_gifts" not in url
+
+
+def test_poll_is_structured_and_does_not_publish_a_text_post():
+    from content_os.remix_store import save_poll
+    from unittest.mock import AsyncMock
+    db = DB(); db.row.update(format_key="remix_poll",source_title="Remix #1",status="review")
+    save_poll(db,8,"Что проверяешь первым?",["Контекст","Детали"])
+    premium = Premium(ready=True)
+    premium.send_poll = AsyncMock(return_value=SimpleNamespace(id=94))
+    legacy = make_legacy(db,Bot(),premium=premium)
+    service = PublishingService(legacy,EditorialMemory(db))
+    assert asyncio.run(service.publish(8)) == ("premium",None)
+    assert premium.sent == []
+    assert premium.send_poll.call_args.args[2] == ["Контекст","Детали"]
+    assert db.updated["published_message_id"] == 94
+    db.row.update(db.updated)
+    with pytest.raises(ValueError,match="уже опубликован"):
+        asyncio.run(service.publish(8))
+    assert premium.send_poll.call_count == 1
+
+
+def test_missing_poll_metadata_blocks_publication():
+    db = DB(); db.row.update(format_key="remix_poll")
+    premium=Premium(ready=True)
+    service=PublishingService(make_legacy(db,Bot(),premium=premium),EditorialMemory(db))
+    with pytest.raises(ValueError,match="Опрос не найден"):
+        asyncio.run(service.publish(8))
+    assert premium.sent == [] and db.updated == {}
+
+
+def test_caption_budget_counts_rendered_entities_and_utf16():
+    from content_os.publishing_v2 import caption_length
+    assert caption_length('<b>A &amp; B</b>') == 5
+    assert caption_length('<tg-emoji emoji-id="123">💎</tg-emoji>') == 2
+
+
+def test_fit_caption_includes_cta_and_requires_another_publish_action():
+    from unittest.mock import AsyncMock
+    from content_os.publishing_v2 import caption_length
+    db = DB(); original = "Исходный разбор. " * 110; db.row["text"] = original; db.row["source_title"] = "Исходный разбор"
+    db.style_examples = lambda *args,**kwargs: []
+    premium=Premium(ready=True)
+    legacy=make_legacy(db,Bot(),shop_bot=Bot(),shop_cta_every=4,premium=premium)
+    compact=("Ты проверил картинку. А смысл?\n\n"
+             "Сначала посмотри, что именно ты выбираешь, и только потом сравнивай варианты. "
+             "Одна красивая обложка не объясняет ценность предмета и не заменяет проверку деталей. "
+             "Если сомневаешься, собери факты, проверь контекст и не спеши с выводом. Сохрани этот разбор")
+    legacy.editor=SimpleNamespace(llm=AsyncMock(side_effect=[original,compact]))
+    service=PublishingService(legacy,EditorialMemory(db))
+    candidate,rendered=asyncio.run(service.fit_caption(8))
+    assert caption_length(rendered) <= 1000
+    assert "https://t.me/shopbot" in rendered
+    assert db.updated["text"] == candidate["text"]
+    assert db.updated["status"] == "review" and db.updated["scheduled_at"] is None
+    assert premium.sent == []
+    assert db.get("v2:caption_original:8") == original
+
+
+def test_failed_fit_preserves_original_text():
+    from unittest.mock import AsyncMock
+    db=DB(); original="Исходный разбор. "*110; db.row["text"]=original
+    db.style_examples=lambda *args,**kwargs: []
+    legacy=make_legacy(db,Bot(),premium=Premium(ready=True))
+    legacy.editor=SimpleNamespace(llm=AsyncMock(return_value=original))
+    service=PublishingService(legacy,EditorialMemory(db))
+    with pytest.raises(ValueError,match="Исходный текст сохранён"):
+        asyncio.run(service.fit_caption(8))
+    assert db.updated == {} and db.row["text"] == original

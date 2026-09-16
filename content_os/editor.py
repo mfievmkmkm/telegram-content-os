@@ -3,6 +3,7 @@ import hashlib
 import html
 import random
 import re
+import logging
 
 import aiohttp
 from .channels import CHANNELS, FORMAT_ROTATION, FORMAT_RULES, POST_RULES
@@ -14,19 +15,36 @@ from .fact_layer import FactPack, FactStore
 from .topic_rotation import TopicRotation
 
 
+class LLMTruncatedError(ValueError):
+    def __init__(self, partial):
+        super().__init__("Ответ модели обрезан по лимиту токенов")
+        self.partial = partial
+
+
 class Editor:
     def __init__(self, settings, database): self.settings, self.db = settings, database
 
-    async def llm(self, system, prompt, temperature=.85):
+    async def remix_llm(self, system, prompt, temperature=.85):
+        return await self.llm(system, prompt, temperature, max_tokens=3600, check_completion=True)
+
+    async def llm(self, system, prompt, temperature=.85, *, max_tokens=1600, check_completion=False):
         if not self.settings.llm_key: raise RuntimeError("LLM_API_KEY не задан")
         payload = {"model": self.settings.llm_model,"messages":[{"role":"system","content":system},{"role":"user","content":prompt}],
-                   "temperature":temperature,"max_tokens":1600}
+                   "temperature":temperature,"max_tokens":max_tokens}
         headers = {"Authorization":f"Bearer {self.settings.llm_key}","Content-Type":"application/json"}
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90)) as session:
             async with session.post(f"{self.settings.llm_url}/chat/completions",json=payload,headers=headers) as response:
                 body = await response.text()
                 if response.status >= 400: raise RuntimeError(f"LLM HTTP {response.status}: {body[:240]}")
-                return (await response.json())["choices"][0]["message"]["content"].strip()
+                choice = (await response.json())["choices"][0]
+                content = choice["message"].get("content")
+                if not isinstance(content, str):
+                    raise ValueError("Модель вернула пустой текстовый ответ")
+                if check_completion:
+                    logging.getLogger(__name__).info("Remix LLM finish=%s chars=%s", choice.get("finish_reason"), len(content))
+                    if choice.get("finish_reason") == "length":
+                        raise LLMTruncatedError(content)
+                return content.strip()
 
     async def material(self, channel_key, choice=None):
         fallback = choice.seed if choice else random.choice(CHANNELS[channel_key]["topics"])
@@ -41,6 +59,15 @@ class Editor:
 
     @staticmethod
     def format_rule(format_key):
+        remix_rules = {
+            "remix_long": "700–1400 знаков, самостоятельный полезный разбор",
+            "remix_short": "250–500 знаков, самостоятельный короткий пост",
+            "remix_meme": "setup + punchline, максимум 180 знаков; сохрани шутку",
+            "remix_sales": "Короткий нативный переход к действию без выдуманных обещаний",
+            "remix_saleslong": "Большой пост с нативным продажным мостом в конце",
+            "remix_salesshort": "Короткий пост с нативным продажным мостом в конце",
+        }
+        if format_key in remix_rules: return remix_rules[format_key]
         return FORMAT_RULES.get(format_key,"350–700 знаков. Один сильный угол, без воды и повторов.")
 
     @staticmethod
@@ -102,9 +129,13 @@ class Editor:
         return self.db.save_draft(channel_key,format_key,text,score,material["title"],material["url"],digest)
 
     async def rewrite(self, draft, mode):
+        if draft["format_key"] == "remix_poll":
+            raise ValueError("Для изменения вопроса и вариантов создай новый Remix исходника")
         instructions={"harder":"Усиль конфликт, сарказм и первую строку. Не меняй факты.",
                       "rewrite":"Полностью другой заход и структура. Сохрани факты.",
                       "short":"Сократи до 500–700 знаков, оставь ударные мысли."}
+        if mode == "short" and str(draft["format_key"]).startswith("remix_"):
+            instructions[mode] = "Сократи текст, сохрани формат и законченную мысль. Не увеличивай объём."
         text=clean_generated_post(await self.llm(CHANNELS[draft["channel_key"]]["voice"]+POST_RULES,
                             f"{instructions[mode]} Сохрани характер рубрики: {self.format_rule(draft['format_key'])} Верни только пост.\n\n{draft['text']}"))
         text=decorate_post(text,draft["channel_key"])

@@ -29,6 +29,10 @@ def install_review(legacy):
     def review_keyboard(draft_id):
         markup = base_keyboard(draft_id)
         rows = [list(row) for row in markup.inline_keyboard]
+        draft = legacy.db.draft(int(draft_id))
+        if draft and draft["format_key"] == "remix_poll":
+            allowed = ("publish:", "schedule:", "delete:", "remixv2:")
+            return InlineKeyboardMarkup(inline_keyboard=[filtered for row in rows if (filtered := [b for b in row if (b.callback_data or "").startswith(allowed)])])
         rows.insert(-1, [InlineKeyboardButton(text="🎨 Другие карточки", callback_data=f"visualv2:options:{draft_id}")])
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -47,7 +51,7 @@ def install_review(legacy):
     async def review_v2(draft_id):
         chat = legacy.db.get("admin_chat_id")
         if not chat:
-            return
+            raise RuntimeError("Открой /start в админ-боте, затем повтори действие: чат редактора ещё не сохранён")
         try:
             result = await director.polish(draft_id)
         except Exception as exc:
@@ -71,11 +75,11 @@ def install_review(legacy):
                         InlineKeyboardButton(text="🔥 Жёстче", callback_data=f"harder:{draft_id}"),
                     ],
                     [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete:{draft_id}")],
-                ]),
+                ]) if draft["format_key"] != "remix_poll" else InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="♻️ Пересобрать Remix", callback_data=f"remixv2:start:{draft_id}"), InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete:{draft_id}")]]),
             )
 
         channel = draft["channel_key"]
-        wants_card = base_use_gift(draft_id) if channel == "gifts" else base_use_liga(draft_id)
+        wants_card = False if draft["format_key"] == "remix_poll" else (base_use_gift(draft_id) if channel == "gifts" else base_use_liga(draft_id))
         selected = memory.selected_variant(draft_id)
         if wants_card and selected is None:
             recent = memory.recent_visuals(channel)
