@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import os
 from collections import Counter
 from datetime import date, datetime
@@ -98,13 +99,18 @@ def _draft_picker(db, callback_prefix: str, back: str = "v2:studio", limit: int 
     drafts=[]
     for project in ("gifts","liga"):
         try: drafts.extend(list(db.recent_drafts(project,limit)))
-        except Exception: continue
+        except Exception:
+            logging.getLogger(__name__).exception("Could not load Studio drafts")
+            retry = {"remixv2:start": "v2:remix", "shortsv2:start": "v2:shorts", "visualv2:options": "v2:cards"}.get(callback_prefix, back)
+            return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="БД недоступна · Повторить загрузку", callback_data=retry)], *section_nav(back)])
     drafts.sort(key=lambda row:int(_value(row,"id",0) or 0),reverse=True)
     rows=[]
     for draft in drafts[:limit]:
         draft_id=str(_value(draft,"id")); channel=str(_value(draft,"channel_key")).upper()
         title=_first_line(_value(draft,"text"),38) or f"Пост {draft_id}"
         rows.append([InlineKeyboardButton(text=f"{channel} · {title}",callback_data=f"{callback_prefix}:{draft_id}")])
+    if not drafts:
+        rows.append([InlineKeyboardButton(text="Нет черновиков · Создать пост", callback_data="v2:create")])
     rows.extend(section_nav(back))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -390,7 +396,9 @@ def install(legacy):
             icon="●" if item.ready else "○"; detail=item.warning or ("нужно: "+", ".join(item.missing) if item.missing else "готов")
             rows.append(f"{icon} <b>{html.escape(item.title)}</b>  <i>{html.escape(detail)}</i>")
         warnings="\n".join(f"• {html.escape(item)}" for item in gate.warnings) or "нет"
-        text=f"<b>⚙ SYSTEM  /  {'READY' if system_ready else 'SETUP'}</b>\n\n"+"\n".join(rows)+f"\n\n<b>Предупреждения</b>\n{warnings}\n\n<i>Значения секретов никогда не показываются</i>"
+        from .entrypoint import runtime_name
+        version = html.escape(os.getenv("CONTENT_OS_REVISION", "unknown")[:12])
+        text=f"<b>⚙ SYSTEM  /  {'READY' if system_ready else 'SETUP'}</b>\n<code>{runtime_name()} · {version}</code>\n\n"+"\n".join(rows)+f"\n\n<b>Предупреждения</b>\n{warnings}\n\n<i>Значения секретов никогда не показываются</i>"
         controls=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◆ Editorial Mono",callback_data="panel:emojitheme:editorial"),
              InlineKeyboardButton(text="✦ Выбрать emoji pack",callback_data="panel:emojisample")],

@@ -894,6 +894,9 @@ async def pub_cb(c:CallbackQuery):
     try: mode,error=await publish(int(c.data.split(":")[1]))
     except Exception as exc:
         log.exception("Publish callback failed")
+        from .publishing_v2 import CaptionTooLongError, caption_keyboard
+        if isinstance(exc, CaptionTooLongError):
+            return await c.message.answer(html.escape(str(exc)),parse_mode=ParseMode.HTML,reply_markup=caption_keyboard(c.data.split(":")[1]))
         return await c.message.answer(f"❌ Не опубликовано: <code>{html.escape(type(exc).__name__+': '+str(exc)[:260])}</code>",parse_mode=ParseMode.HTML)
     await c.message.edit_reply_markup(reply_markup=None)
     await c.message.answer("✅ Опубликовано в фирменном Premium-стиле")
@@ -902,7 +905,14 @@ async def pub_cb(c:CallbackQuery):
 async def rewrite_cb(c:CallbackQuery):
     if not admin(c): return
     mode,draft_id=c.data.split(":"); draft_id=int(draft_id); await c.answer("Переписываю…")
-    text,score=await editor.rewrite(db.draft(draft_id),mode); db.update(draft_id,text=text,hook_score=score)
+    draft=db.draft(draft_id)
+    if not draft or dict(draft).get("status") == "deleted":
+        return await c.message.answer("Черновик не найден или удалён")
+    try: text,score=await editor.rewrite(draft,mode)
+    except Exception as exc:
+        log.exception("Rewrite callback failed")
+        return await c.message.answer(f"❌ Текст не изменён: {html.escape(str(exc)[:300])}",parse_mode=ParseMode.HTML)
+    db.update(draft_id,text=text,hook_score=score)
     channel_key=db.draft(draft_id)["channel_key"]
     await c.message.edit_text(f"📝 <b>Черновик #{draft_id} · хук {score}/5</b>\n\n{render(channel_key,text)}",parse_mode=ParseMode.HTML,reply_markup=keyboard(draft_id))
 
@@ -973,8 +983,9 @@ async def unschedule(c:CallbackQuery):
 
 @router.callback_query(F.data.startswith("back:"))
 async def back_to_draft(c:CallbackQuery,state:FSMContext):
-    if not admin(c): return
-    await state.clear(); draft_id=int(c.data.split(":")[1]); await c.message.edit_reply_markup(reply_markup=keyboard(draft_id)); await c.answer()
+    import sys
+    from .draft_navigation import back_to_draft as show_source
+    await show_source(sys.modules[__name__], c, state)
 
 @router.callback_query(F.data.startswith("delete:"))
 async def delete(c:CallbackQuery):

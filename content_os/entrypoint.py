@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import logging
 
 
 def runtime_name() -> str:
@@ -12,6 +13,7 @@ def runtime_name() -> str:
 
 
 async def main():
+    logging.getLogger(__name__).warning("Content OS runtime=%s revision=%s", runtime_name(), os.getenv("CONTENT_OS_REVISION", "unknown"))
     if runtime_name() == "v2":
         from .main_v2 import main as run
     else:

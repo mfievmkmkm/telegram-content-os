@@ -44,6 +44,28 @@ class PremiumPublisher:
     @property
     def ready(self):
         return bool(self.settings.publish_via_mtproto and self.settings.telegram_api_id and self.settings.telegram_api_hash and self.settings.telegram_session)
+    async def send_poll(self, channel, question_html, options):
+        from telethon.tl.types import InputMediaPoll, Poll, PollAnswer, TextWithEntities
+        from .remix_store import validate_poll
+        if not self.ready:
+            raise RuntimeError("Premium MTProto не настроен")
+        expected = require_custom_emoji_markup(question_html)
+        question, entities = parse_entities(question_html)
+        validate_poll(question, options)
+        if sum(isinstance(item, MessageEntityCustomEmoji) for item in entities) != expected:
+            raise RuntimeError("Не удалось собрать Premium emoji для опроса")
+        media = InputMediaPoll(Poll(
+            id=0, question=TextWithEntities(question, entities),
+            answers=[PollAnswer(TextWithEntities(option, []), bytes([i])) for i, option in enumerate(options)],
+            public_voters=False, multiple_choice=False,
+        ))
+        client = TelegramClient(StringSession(self.settings.telegram_session), self.settings.telegram_api_id, self.settings.telegram_api_hash)
+        await client.connect()
+        try:
+            if not await client.is_user_authorized(): raise RuntimeError("MTProto session is not authorized")
+            return await client.send_file(channel, media)
+        finally:
+            await client.disconnect()
     async def probe(self,channel):
         if not self.ready: return False,"переменные MTProto не заполнены"
         client=TelegramClient(StringSession(self.settings.telegram_session),self.settings.telegram_api_id,self.settings.telegram_api_hash)

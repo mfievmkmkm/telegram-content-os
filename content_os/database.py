@@ -92,6 +92,10 @@ class Database:
     def draft(self, draft_id):
         with self.connect() as db: return db.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
 
+    def draft_by_source_hash(self, channel_key, source_hash):
+        with self.connect() as db:
+            return db.execute("SELECT * FROM drafts WHERE channel_key=? AND source_hash=?", (channel_key, source_hash)).fetchone()
+
     def recent_drafts(self, channel_key, limit=20):
         with self.connect() as db:
             return db.execute("SELECT * FROM drafts WHERE channel_key=? AND status!='deleted' ORDER BY id DESC LIMIT ?",(channel_key,limit)).fetchall()
